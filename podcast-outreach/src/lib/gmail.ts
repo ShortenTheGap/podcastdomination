@@ -124,7 +124,7 @@ export class GmailClient {
       );
 
       if (failedRecipients) {
-        return { bounced: true, reason: failedRecipients.value };
+        return { bounced: true, reason: failedRecipients.value ?? undefined };
       }
 
       return { bounced: false };
