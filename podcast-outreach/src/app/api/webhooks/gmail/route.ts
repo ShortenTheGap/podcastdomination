@@ -1,6 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { getThread } from "@/lib/gmail";
+import { GmailClient } from "@/lib/gmail";
+
+// Create Gmail client from environment credentials
+function getGmailClient() {
+  if (!process.env.GOOGLE_ACCESS_TOKEN || !process.env.GOOGLE_REFRESH_TOKEN) {
+    throw new Error("Gmail credentials not configured");
+  }
+  return new GmailClient({
+    access_token: process.env.GOOGLE_ACCESS_TOKEN,
+    refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
+  });
+}
 
 // POST /api/webhooks/gmail - Handle Gmail push notifications
 export async function POST(request: NextRequest) {
@@ -82,7 +93,8 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const thread = await getThread(threadId);
+    const gmail = getGmailClient();
+    const thread = await gmail.getThread(threadId);
     const messageCount = thread.messages?.length || 0;
 
     if (messageCount > 1) {

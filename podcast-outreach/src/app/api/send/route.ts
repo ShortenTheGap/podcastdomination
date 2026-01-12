@@ -1,8 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { sendEmail } from "@/lib/gmail";
+import { GmailClient } from "@/lib/gmail";
 import { z } from "zod";
 import { SENDING_RULES } from "@/lib/constants";
+
+// Create Gmail client from environment credentials
+function getGmailClient() {
+  if (!process.env.GOOGLE_ACCESS_TOKEN || !process.env.GOOGLE_REFRESH_TOKEN) {
+    throw new Error("Gmail credentials not configured");
+  }
+  return new GmailClient({
+    access_token: process.env.GOOGLE_ACCESS_TOKEN,
+    refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
+  });
+}
 
 const sendSchema = z.object({
   podcastId: z.string(),
@@ -105,7 +116,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Send immediately
-    const result = await sendEmail({
+    const gmail = getGmailClient();
+    const result = await gmail.sendEmail({
       to: emailToUse,
       subject: podcast.emailSubject,
       body: podcast.emailDraft,
@@ -143,7 +155,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       touchId: touch.id,
-      messageId: result.messageId,
+      messageId: result.id,
       threadId: result.threadId,
       type: touchType,
     });
