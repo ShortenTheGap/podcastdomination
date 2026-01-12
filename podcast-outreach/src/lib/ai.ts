@@ -1,4 +1,4 @@
-import Anthropic from "anthropic";
+import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 
 // Anthropic client for Claude
