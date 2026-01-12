@@ -180,3 +180,32 @@ export type TierId = (typeof TIER_CONFIG)[number]["id"];
 export type OutcomeId = (typeof OUTCOME_CONFIG)[number]["id"];
 export type AngleId = (typeof ANGLE_CONFIG)[number]["id"];
 export type SeedCategoryId = (typeof SEED_CATEGORY_CONFIG)[number]["id"];
+
+// ============================================
+// BACKWARD COMPATIBILITY (for existing pages)
+// ============================================
+
+// Map old pipeline stages to new outreach status
+export const PIPELINE_STAGES = OUTREACH_STATUS_CONFIG;
+export type PipelineStage = OutreachStatusId;
+
+// Podcast categories derived from seed categories
+export const PODCAST_CATEGORIES = [
+  "Fitness & Fat Loss",
+  "General Health & Longevity",
+  "Entrepreneur & CEO",
+  "Dad & Parenting",
+  "Evidence-Based Nutrition",
+  "Body Recomposition",
+  "Personal Development",
+] as const;
+
+// Discovery sources
+export const DISCOVERY_SOURCES = [
+  { id: "seed_guest", label: "Seed Guest Search", icon: "users" },
+  { id: "category", label: "Category Search", icon: "folder" },
+  { id: "apple", label: "Apple Podcasts", icon: "apple" },
+  { id: "spotify", label: "Spotify", icon: "music" },
+  { id: "manual", label: "Manual Entry", icon: "edit" },
+  { id: "import", label: "CSV Import", icon: "upload" },
+] as const;
