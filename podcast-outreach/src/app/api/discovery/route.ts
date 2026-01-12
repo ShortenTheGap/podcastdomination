@@ -7,20 +7,46 @@ const discoverySchema = z.object({
   limit: z.number().default(20),
 });
 
-// Mock Apple Podcasts search - will be replaced with Python scraper call
+interface ApplePodcastResult {
+  collectionId: number;
+  collectionName: string;
+  artistName: string;
+  collectionViewUrl: string;
+  artworkUrl100?: string;
+  artworkUrl600?: string;
+  primaryGenreName?: string;
+  genres?: string[];
+  trackCount?: number;
+  releaseDate?: string;
+  country?: string;
+  contentAdvisoryRating?: string;
+  feedUrl?: string;
+}
+
+// Search Apple Podcasts via iTunes API
 async function searchApplePodcasts(query: string, limit: number) {
-  const url = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=podcast&entity=podcast&limit=${limit}`;
+  const url = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=podcast&entity=podcast&limit=${limit}&country=US`;
 
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      headers: {
+        "Accept": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      console.error("Apple API error:", response.status);
+      return [];
+    }
+
     const data = await response.json();
 
-    return data.results.map((item: Record<string, unknown>) => ({
-      showName: item.collectionName as string,
-      hostName: item.artistName as string,
-      showDescription: (item.description as string) || "",
-      primaryPlatformUrl: item.collectionViewUrl as string,
-      applePodcastUrl: item.collectionViewUrl as string,
+    return (data.results || []).map((item: ApplePodcastResult) => ({
+      showName: item.collectionName || "Unknown Show",
+      hostName: item.artistName || null,
+      showDescription: null, // iTunes search doesn't return description, need to fetch separately
+      primaryPlatformUrl: item.collectionViewUrl || "",
+      applePodcastUrl: item.collectionViewUrl || null,
       websiteUrl: null,
       spotifyUrl: null,
       dedupeKey: `apple:${item.collectionId}`,
@@ -31,12 +57,55 @@ async function searchApplePodcasts(query: string, limit: number) {
       backupEmail: null,
       backupEmailSourceUrl: null,
       discoverySource: `category:${query}`,
-      riskSignals: [],
+      riskSignals: detectRiskSignals(item),
+      // Additional display fields
+      artworkUrl: item.artworkUrl600 || item.artworkUrl100 || null,
+      genre: item.primaryGenreName || null,
+      genres: item.genres || [],
+      episodeCount: item.trackCount || 0,
+      lastReleaseDate: item.releaseDate || null,
+      country: item.country || null,
+      contentRating: item.contentAdvisoryRating || null,
+      feedUrl: item.feedUrl || null,
     }));
   } catch (error) {
     console.error("Apple search error:", error);
     return [];
   }
+}
+
+// Detect potential risk signals from podcast metadata
+function detectRiskSignals(item: ApplePodcastResult): string[] {
+  const signals: string[] = [];
+  const name = (item.collectionName || "").toLowerCase();
+  const genres = (item.genres || []).map(g => g.toLowerCase());
+
+  // Check for explicit content
+  if (item.contentAdvisoryRating === "Explicit") {
+    signals.push("EXPLICIT_CONTENT");
+  }
+
+  // Check genres for potential issues
+  if (genres.includes("politics") || genres.includes("government")) {
+    signals.push("POTENTIAL_POLITICS");
+  }
+
+  // Check for potentially inactive shows (no episodes in last year)
+  if (item.releaseDate) {
+    const lastRelease = new Date(item.releaseDate);
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+    if (lastRelease < oneYearAgo) {
+      signals.push("POTENTIALLY_INACTIVE");
+    }
+  }
+
+  // Low episode count might indicate new or inactive show
+  if (item.trackCount && item.trackCount < 10) {
+    signals.push("FEW_EPISODES");
+  }
+
+  return signals;
 }
 
 // POST /api/discovery - Search for podcasts
@@ -48,8 +117,7 @@ export async function POST(request: NextRequest) {
     let results;
 
     if (type === "seed_guest") {
-      // For seed guest searches, we'd call the Python discovery engine
-      // For now, search Apple with the guest name
+      // For seed guest searches, search Apple with the guest name
       results = await searchApplePodcasts(query, limit);
       results = results.map((r: Record<string, unknown>) => ({
         ...r,
@@ -66,6 +134,7 @@ export async function POST(request: NextRequest) {
       count: results.length,
       query,
       type,
+      platform: "Apple Podcasts",
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

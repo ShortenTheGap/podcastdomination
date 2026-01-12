@@ -228,6 +228,15 @@ export interface DiscoveryResult {
   backupEmailSourceUrl: string | null;
   discoverySource: string;
   riskSignals: string[];
+  // Additional display fields from Apple Podcasts
+  artworkUrl?: string | null;
+  genre?: string | null;
+  genres?: string[];
+  episodeCount?: number;
+  lastReleaseDate?: string | null;
+  country?: string | null;
+  contentRating?: string | null;
+  feedUrl?: string | null;
 }
 
 export interface AngleGenerationRequest {

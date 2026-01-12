@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Plus, Loader2, ExternalLink, Check, Users, Folder, AlertCircle, X } from "lucide-react";
+import { Search, Plus, Loader2, ExternalLink, Check, Users, Folder, AlertCircle, X, Mic, Calendar, Tag } from "lucide-react";
 import type { DiscoveryResult } from "@/types";
 
 type SearchType = "seed_guest" | "category";
@@ -205,30 +205,87 @@ export default function DiscoveryPage() {
         </CardContent>
       </Card>
 
+      {/* Results Count */}
+      {results.length > 0 && (
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-gray-500">
+            Found {results.length} podcasts from Apple Podcasts
+          </p>
+        </div>
+      )}
+
       {/* Results */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {results.map((podcast) => (
-          <Card key={podcast.dedupeKey}>
-            <CardHeader className="pb-3">
-              <div className="flex items-start justify-between gap-2">
-                <CardTitle className="text-base line-clamp-1">
+          <Card key={podcast.dedupeKey} className="overflow-hidden">
+            {/* Artwork and Header */}
+            <div className="flex gap-4 p-4 pb-0">
+              {podcast.artworkUrl ? (
+                <img
+                  src={podcast.artworkUrl}
+                  alt={podcast.showName}
+                  className="w-20 h-20 rounded-lg object-cover flex-shrink-0"
+                />
+              ) : (
+                <div className="w-20 h-20 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
+                  <Mic className="h-8 w-8 text-gray-300" />
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <h3 className="font-semibold text-gray-900 line-clamp-2 leading-tight">
                   {podcast.showName}
-                </CardTitle>
-                {podcast.riskSignals.length > 0 && (
-                  <Badge variant="destructive" className="text-xs flex-shrink-0">
-                    {podcast.riskSignals.length} risk
+                </h3>
+                {podcast.hostName && (
+                  <p className="text-sm text-gray-500 mt-1 line-clamp-1">
+                    {podcast.hostName}
+                  </p>
+                )}
+                {podcast.genre && (
+                  <div className="flex items-center gap-1 mt-1">
+                    <Tag className="h-3 w-3 text-gray-400" />
+                    <span className="text-xs text-gray-500">{podcast.genre}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <CardContent className="pt-3">
+              {/* Metadata Row */}
+              <div className="flex flex-wrap gap-2 mb-3">
+                {podcast.episodeCount !== undefined && podcast.episodeCount > 0 && (
+                  <Badge variant="secondary" className="text-xs">
+                    <Mic className="h-3 w-3 mr-1" />
+                    {podcast.episodeCount} episodes
+                  </Badge>
+                )}
+                {podcast.lastReleaseDate && (
+                  <Badge variant="secondary" className="text-xs">
+                    <Calendar className="h-3 w-3 mr-1" />
+                    {new Date(podcast.lastReleaseDate).toLocaleDateString("en-US", {
+                      month: "short",
+                      year: "numeric",
+                    })}
+                  </Badge>
+                )}
+                {podcast.contentRating === "Explicit" && (
+                  <Badge variant="outline" className="text-xs text-orange-600 border-orange-300">
+                    Explicit
                   </Badge>
                 )}
               </div>
-              {podcast.hostName && (
-                <p className="text-sm text-gray-500">{podcast.hostName}</p>
-              )}
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-gray-500 line-clamp-3 mb-4">
-                {podcast.showDescription || "No description available"}
-              </p>
 
+              {/* Risk Signals */}
+              {podcast.riskSignals.length > 0 && (
+                <div className="flex flex-wrap gap-1 mb-3">
+                  {podcast.riskSignals.map((signal, i) => (
+                    <Badge key={i} variant="destructive" className="text-xs">
+                      {signal.replace(/_/g, " ").toLowerCase()}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+
+              {/* Recent Guests */}
               {podcast.recentGuests.length > 0 && (
                 <div className="mb-3">
                   <p className="text-xs text-gray-400 mb-1">Recent guests:</p>
@@ -242,7 +299,8 @@ export default function DiscoveryPage() {
                 </div>
               )}
 
-              <div className="flex items-center justify-between">
+              {/* Actions */}
+              <div className="flex items-center justify-between pt-2 border-t">
                 <span className="text-xs text-gray-400">
                   {podcast.discoverySource}
                 </span>
@@ -290,6 +348,11 @@ export default function DiscoveryPage() {
                   </Button>
                 </div>
               </div>
+
+              {/* Error Message */}
+              {podcast.error && (
+                <p className="text-xs text-red-600 mt-2">{podcast.error}</p>
+              )}
             </CardContent>
           </Card>
         ))}
