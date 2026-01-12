@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { z } from "zod";
 import crypto from "crypto";
 
-// GET /api/podcasts - List podcasts with filters
+// GET /api/podcasts - List podcasts with filters and pagination
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
