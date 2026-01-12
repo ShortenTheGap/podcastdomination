@@ -1,15 +1,27 @@
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 
-// Anthropic client for Claude
-export const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+// Lazy-loaded clients (only initialized when first used, not at build time)
+let _anthropic: Anthropic | null = null;
+let _openai: OpenAI | null = null;
 
-// OpenAI client (for embeddings or GPT fallback)
-export const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+export function getAnthropicClient(): Anthropic {
+  if (!_anthropic) {
+    _anthropic = new Anthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY,
+    });
+  }
+  return _anthropic;
+}
+
+export function getOpenAIClient(): OpenAI {
+  if (!_openai) {
+    _openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+  }
+  return _openai;
+}
 
 // Default model configurations
 export const AI_CONFIG = {
@@ -38,6 +50,7 @@ export async function analyzePodcastForAngles(
     relevanceScore: number;
   }>;
 }> {
+  const anthropic = getAnthropicClient();
   const episodeContext = recentEpisodes
     .map((ep) => `- ${ep.title}${ep.description ? `: ${ep.description}` : ""}`)
     .join("\n");
@@ -104,6 +117,7 @@ export async function generateEmailDraft(
   subject: string;
   body: string;
 }> {
+  const anthropic = getAnthropicClient();
   const response = await anthropic.messages.create({
     model: AI_CONFIG.claude.model,
     max_tokens: AI_CONFIG.claude.maxTokens,
