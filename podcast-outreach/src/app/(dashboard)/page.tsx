@@ -1,170 +1,420 @@
 "use client";
 
 import { useState } from "react";
-import { usePipeline, useUpdatePodcast } from "@/hooks/use-podcasts";
-import { PIPELINE_STAGES } from "@/lib/constants";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
+  Send,
+  Clock,
+  CheckCircle,
+  XCircle,
+  AlertTriangle,
+  ChevronDown,
+  Filter,
   Search,
-  Plus,
-  Mail,
-  Calendar,
-  MoreVertical,
-  GripVertical,
+  MoreHorizontal,
 } from "lucide-react";
-import type { OutreachStatus } from "@/types";
+import { cn } from "@/lib/utils";
+
+// Status groups for Kanban-style view
+const STATUS_GROUPS = [
+  {
+    id: "ready",
+    label: "Ready to Send",
+    statuses: ["QA_APPROVED"],
+    color: "bg-green-500",
+  },
+  {
+    id: "pending",
+    label: "Pending Action",
+    statuses: ["FOLLOW_UP_DUE", "ESCALATION_DUE"],
+    color: "bg-yellow-500",
+  },
+  {
+    id: "waiting",
+    label: "Waiting Response",
+    statuses: ["SENT", "FOLLOW_UP_SENT", "ESCALATED"],
+    color: "bg-blue-500",
+  },
+  {
+    id: "needs_work",
+    label: "Needs Work",
+    statuses: ["NOT_CONTACTED", "READY_TO_DRAFT", "DRAFTED"],
+    color: "bg-gray-500",
+  },
+  {
+    id: "closed",
+    label: "Closed",
+    statuses: ["REPLIED", "CLOSED"],
+    color: "bg-purple-500",
+  },
+];
 
 export default function PipelinePage() {
-  const [search, setSearch] = useState("");
-  const { data: podcasts, isLoading } = usePipeline({ search });
-  const updatePodcast = useUpdatePodcast();
+  const [viewMode, setViewMode] = useState<"table" | "kanban">("table");
+  const [filters, setFilters] = useState({
+    status: "",
+    tier: "",
+    outcome: "",
+  });
 
-  // Group podcasts by status
-  const columns = PIPELINE_STAGES.map((stage) => ({
-    ...stage,
-    items: podcasts?.filter((p) => p.status === stage.id) || [],
-  }));
+  const { data, isLoading } = useQuery({
+    queryKey: ["podcasts", filters],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (filters.status) params.set("status", filters.status);
+      if (filters.tier) params.set("tier", filters.tier);
+      if (filters.outcome) params.set("outcome", filters.outcome);
 
-  const handleDragStart = (e: React.DragEvent, podcastId: string) => {
-    e.dataTransfer.setData("podcastId", podcastId);
-  };
+      const res = await fetch(`/api/podcasts?${params}`);
+      return res.json();
+    },
+  });
 
-  const handleDrop = (e: React.DragEvent, newStatus: string) => {
-    e.preventDefault();
-    const podcastId = e.dataTransfer.getData("podcastId");
-    if (podcastId) {
-      updatePodcast.mutate({
-        id: podcastId,
-        data: { status: newStatus as OutreachStatus },
-      });
+  return (
+    <div className="h-full flex flex-col">
+      {/* Header */}
+      <div className="border-b px-6 py-4 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold">Outreach Pipeline</h1>
+          <p className="text-sm text-muted-foreground">
+            {data?.total || 0} podcasts in pipeline
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          {/* View Toggle */}
+          <div className="flex border rounded-lg">
+            <button
+              onClick={() => setViewMode("table")}
+              className={cn(
+                "px-3 py-1.5 text-sm",
+                viewMode === "table" && "bg-muted"
+              )}
+            >
+              Table
+            </button>
+            <button
+              onClick={() => setViewMode("kanban")}
+              className={cn(
+                "px-3 py-1.5 text-sm",
+                viewMode === "kanban" && "bg-muted"
+              )}
+            >
+              Board
+            </button>
+          </div>
+
+          {/* Filters */}
+          <FilterDropdown filters={filters} onChange={setFilters} />
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-auto">
+        {isLoading ? (
+          <div className="flex items-center justify-center h-64">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+          </div>
+        ) : viewMode === "table" ? (
+          <PipelineTable podcasts={data?.podcasts || []} />
+        ) : (
+          <PipelineBoard podcasts={data?.podcasts || []} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PipelineTable({ podcasts }: { podcasts: any[] }) {
+  return (
+    <table className="w-full">
+      <thead className="bg-muted/50 sticky top-0">
+        <tr>
+          <th className="text-left px-4 py-3 text-sm font-medium">Show</th>
+          <th className="text-left px-4 py-3 text-sm font-medium">Tier</th>
+          <th className="text-left px-4 py-3 text-sm font-medium">Status</th>
+          <th className="text-left px-4 py-3 text-sm font-medium">
+            Next Action
+          </th>
+          <th className="text-left px-4 py-3 text-sm font-medium">Contact</th>
+          <th className="text-left px-4 py-3 text-sm font-medium">Outcome</th>
+          <th className="w-12"></th>
+        </tr>
+      </thead>
+      <tbody className="divide-y">
+        {podcasts.map((podcast) => (
+          <PodcastRow key={podcast.id} podcast={podcast} />
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function PodcastRow({ podcast }: { podcast: any }) {
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case "QA_APPROVED":
+        return <CheckCircle className="h-4 w-4 text-green-500" />;
+      case "SENT":
+      case "FOLLOW_UP_SENT":
+        return <Send className="h-4 w-4 text-blue-500" />;
+      case "FOLLOW_UP_DUE":
+      case "ESCALATION_DUE":
+        return <Clock className="h-4 w-4 text-yellow-500" />;
+      default:
+        return <AlertTriangle className="h-4 w-4 text-gray-400" />;
     }
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
+  return (
+    <tr className="hover:bg-muted/30">
+      <td className="px-4 py-3">
+        <div>
+          <p className="font-medium">{podcast.showName}</p>
+          <p className="text-sm text-muted-foreground">
+            {podcast.hostName || "Unknown host"}
+          </p>
+        </div>
+      </td>
+      <td className="px-4 py-3">
+        <TierBadge tier={podcast.tier} />
+      </td>
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-2">
+          {getStatusIcon(podcast.status)}
+          <span className="text-sm">{formatStatus(podcast.status)}</span>
+        </div>
+      </td>
+      <td className="px-4 py-3">
+        {podcast.nextAction && podcast.nextAction !== "NONE" && (
+          <div>
+            <p className="text-sm font-medium">
+              {formatAction(podcast.nextAction)}
+            </p>
+            {podcast.nextActionDate && (
+              <p className="text-xs text-muted-foreground">
+                {new Date(podcast.nextActionDate).toLocaleDateString()}
+              </p>
+            )}
+          </div>
+        )}
+      </td>
+      <td className="px-4 py-3">
+        <p className="text-sm truncate max-w-[200px]">
+          {podcast.primaryEmail || "—"}
+        </p>
+      </td>
+      <td className="px-4 py-3">
+        <OutcomeBadge outcome={podcast.outcome} />
+      </td>
+      <td className="px-4 py-3">
+        <button className="p-1 hover:bg-muted rounded">
+          <MoreHorizontal className="h-4 w-4" />
+        </button>
+      </td>
+    </tr>
+  );
+}
+
+function TierBadge({ tier }: { tier: string }) {
+  const colors: Record<string, string> = {
+    TIER_1: "bg-emerald-100 text-emerald-700",
+    TIER_2: "bg-green-100 text-green-700",
+    TIER_3: "bg-red-100 text-red-700",
+    PENDING: "bg-gray-100 text-gray-700",
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Pipeline</h1>
-          <p className="text-sm text-gray-500">
-            Track your podcast outreach progress
-          </p>
+    <span
+      className={cn(
+        "px-2 py-0.5 rounded text-xs font-medium",
+        colors[tier] || colors.PENDING
+      )}
+    >
+      {tier.replace("_", " ")}
+    </span>
+  );
+}
+
+function OutcomeBadge({ outcome }: { outcome: string }) {
+  const colors: Record<string, string> = {
+    OPEN: "bg-blue-100 text-blue-700",
+    BOOKED: "bg-green-100 text-green-700",
+    DECLINED: "bg-red-100 text-red-700",
+    NO_RESPONSE: "bg-gray-100 text-gray-700",
+    SUPPRESSED: "bg-orange-100 text-orange-700",
+  };
+
+  return (
+    <span
+      className={cn(
+        "px-2 py-0.5 rounded text-xs font-medium",
+        colors[outcome] || "bg-gray-100"
+      )}
+    >
+      {outcome.replace("_", " ")}
+    </span>
+  );
+}
+
+function formatStatus(status: string): string {
+  return status
+    .split("_")
+    .map((word) => word.charAt(0) + word.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function formatAction(action: string): string {
+  const labels: Record<string, string> = {
+    DRAFT: "Create Draft",
+    QA: "Review Draft",
+    SEND: "Send Email",
+    FOLLOW_UP: "Send Follow-up",
+    ESCALATE: "Try Backup Contact",
+    CLOSE: "Close Out",
+  };
+  return labels[action] || action;
+}
+
+function FilterDropdown({
+  filters,
+  onChange,
+}: {
+  filters: { status: string; tier: string; outcome: string };
+  onChange: (filters: { status: string; tier: string; outcome: string }) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-2 px-3 py-1.5 border rounded-lg hover:bg-muted"
+      >
+        <Filter className="h-4 w-4" />
+        <span className="text-sm">Filters</span>
+        <ChevronDown className="h-4 w-4" />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-2 w-64 bg-background border rounded-lg shadow-lg p-4 z-10">
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium">Status</label>
+              <select
+                className="w-full mt-1 border rounded px-2 py-1 text-sm"
+                value={filters.status}
+                onChange={(e) =>
+                  onChange({ ...filters, status: e.target.value })
+                }
+              >
+                <option value="">All</option>
+                <option value="NOT_CONTACTED">Not Contacted</option>
+                <option value="READY_TO_DRAFT">Ready to Draft</option>
+                <option value="DRAFTED">Drafted</option>
+                <option value="QA_APPROVED">QA Approved</option>
+                <option value="SENT">Sent</option>
+                <option value="FOLLOW_UP_DUE">Follow-up Due</option>
+                <option value="REPLIED">Replied</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium">Tier</label>
+              <select
+                className="w-full mt-1 border rounded px-2 py-1 text-sm"
+                value={filters.tier}
+                onChange={(e) => onChange({ ...filters, tier: e.target.value })}
+              >
+                <option value="">All</option>
+                <option value="TIER_1">Tier 1</option>
+                <option value="TIER_2">Tier 2</option>
+                <option value="TIER_3">Tier 3</option>
+                <option value="PENDING">Pending</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium">Outcome</label>
+              <select
+                className="w-full mt-1 border rounded px-2 py-1 text-sm"
+                value={filters.outcome}
+                onChange={(e) =>
+                  onChange({ ...filters, outcome: e.target.value })
+                }
+              >
+                <option value="">All</option>
+                <option value="OPEN">Open</option>
+                <option value="BOOKED">Booked</option>
+                <option value="DECLINED">Declined</option>
+                <option value="NO_RESPONSE">No Response</option>
+              </select>
+            </div>
+
+            <button
+              onClick={() => onChange({ status: "", tier: "", outcome: "" })}
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
+              Clear filters
+            </button>
+          </div>
         </div>
-        <Button>
-          <Plus className="h-4 w-4 mr-2" />
-          Add Podcast
-        </Button>
-      </div>
+      )}
+    </div>
+  );
+}
 
-      {/* Search */}
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-        <Input
-          placeholder="Search podcasts..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-10"
-        />
-      </div>
+function PipelineBoard({ podcasts }: { podcasts: any[] }) {
+  return (
+    <div className="flex gap-4 p-4 overflow-x-auto">
+      {STATUS_GROUPS.map((group) => {
+        const groupPodcasts = podcasts.filter((p) =>
+          group.statuses.includes(p.status)
+        );
 
-      {/* Kanban Board */}
-      <div className="flex gap-4 overflow-x-auto pb-4">
-        {columns.map((column) => (
+        return (
           <div
-            key={column.id}
-            className="flex-shrink-0 w-80"
-            onDrop={(e) => handleDrop(e, column.id)}
-            onDragOver={handleDragOver}
+            key={group.id}
+            className="flex-shrink-0 w-80 bg-muted/30 rounded-lg"
           >
-            <div className="bg-gray-100 rounded-lg p-4">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-medium text-gray-900">{column.label}</h3>
-                  <Badge variant="secondary" className="text-xs">
-                    {column.items.length}
-                  </Badge>
+            <div className="p-3 border-b flex items-center gap-2">
+              <div className={cn("w-2 h-2 rounded-full", group.color)} />
+              <span className="font-medium">{group.label}</span>
+              <span className="text-muted-foreground text-sm ml-auto">
+                {groupPodcasts.length}
+              </span>
+            </div>
+            <div className="p-2 space-y-2 max-h-[calc(100vh-250px)] overflow-y-auto">
+              {groupPodcasts.map((podcast) => (
+                <PodcastCard key={podcast.id} podcast={podcast} />
+              ))}
+              {groupPodcasts.length === 0 && (
+                <div className="text-center py-8 text-muted-foreground text-sm">
+                  No podcasts
                 </div>
-              </div>
-
-              <div className="space-y-3">
-                {isLoading ? (
-                  <div className="text-center py-8 text-gray-500">
-                    Loading...
-                  </div>
-                ) : column.items.length === 0 ? (
-                  <div className="text-center py-8 text-gray-400 text-sm">
-                    No podcasts
-                  </div>
-                ) : (
-                  column.items.map((podcast) => (
-                    <Card
-                      key={podcast.id}
-                      className="cursor-grab active:cursor-grabbing"
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, podcast.id)}
-                    >
-                      <CardHeader className="p-4 pb-2">
-                        <div className="flex items-start justify-between gap-2">
-                          <GripVertical className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                          <CardTitle className="text-sm font-medium flex-1">
-                            {podcast.showName}
-                          </CardTitle>
-                          <Button variant="ghost" size="icon" className="h-6 w-6">
-                            <MoreVertical className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </CardHeader>
-                      <CardContent className="p-4 pt-0">
-                        <p className="text-xs text-gray-500 line-clamp-2 mb-3">
-                          {podcast.showDescription || "No description"}
-                        </p>
-                        <div className="flex items-center gap-2 text-xs text-gray-400">
-                          {podcast.primaryEmail && (
-                            <div className="flex items-center gap-1">
-                              <Mail className="h-3 w-3" />
-                              <span className="truncate max-w-[100px]">
-                                {podcast.primaryEmail}
-                              </span>
-                            </div>
-                          )}
-                          {podcast.sentPrimaryAt && (
-                            <div className="flex items-center gap-1">
-                              <Calendar className="h-3 w-3" />
-                              <span>
-                                {new Date(podcast.sentPrimaryAt).toLocaleDateString()}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                        {podcast.tier && podcast.tier !== "PENDING" && (
-                          <Badge
-                            variant={
-                              podcast.tier === "TIER_1"
-                                ? "default"
-                                : podcast.tier === "TIER_2"
-                                ? "secondary"
-                                : "destructive"
-                            }
-                            className="mt-2 text-xs"
-                          >
-                            {podcast.tier.replace("_", " ")}
-                          </Badge>
-                        )}
-                      </CardContent>
-                    </Card>
-                  ))
-                )}
-              </div>
+              )}
             </div>
           </div>
-        ))}
+        );
+      })}
+    </div>
+  );
+}
+
+function PodcastCard({ podcast }: { podcast: any }) {
+  return (
+    <div className="bg-background p-3 rounded-lg border shadow-sm hover:shadow-md transition-shadow cursor-pointer">
+      <p className="font-medium truncate">{podcast.showName}</p>
+      <p className="text-sm text-muted-foreground truncate">
+        {podcast.hostName || "Unknown host"}
+      </p>
+      <div className="flex items-center gap-2 mt-2">
+        <TierBadge tier={podcast.tier} />
+        {podcast.nextAction && podcast.nextAction !== "NONE" && (
+          <span className="text-xs text-muted-foreground">
+            {formatAction(podcast.nextAction)}
+          </span>
+        )}
       </div>
     </div>
   );
