@@ -1,6 +1,9 @@
 import { google } from "googleapis";
 import { OAuth2Client } from "google-auth-library";
 
+// Gmail API wrapper for sending emails and tracking responses
+// Updated: Force cache invalidation
+
 const SCOPES = [
   "https://www.googleapis.com/auth/gmail.send",
   "https://www.googleapis.com/auth/gmail.readonly",
