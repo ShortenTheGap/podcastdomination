@@ -67,7 +67,9 @@ export const QA_CHECKLIST = [
 
 export const SENDING_RULES = {
   DAILY_CAP: 10,
-  FOLLOW_UP_WINDOW_DAYS: 7,
+  FOLLOW_UP_DELAY_DAYS: 7, // Days to wait before follow-up
+  ESCALATION_DELAY_DAYS: 7, // Days to wait before trying backup email
+  CLOSE_NO_RESPONSE_DAYS: 14, // Days after last touch to close as no response
   MAX_FOLLOW_UPS: 1,
   MAX_BACKUP_ATTEMPTS: 1,
   MIN_HOURS_BETWEEN_SENDS: 1,

@@ -148,7 +148,7 @@ export async function POST(request: NextRequest) {
         ...(touchType === "FOLLOW_UP" && { followUpSentAt: new Date() }),
         ...(touchType === "BACKUP" && { sentBackupAt: new Date() }),
         nextAction: touchType === "PRIMARY" ? "FOLLOW_UP" : "CLOSE",
-        nextActionDate: new Date(Date.now() + SENDING_RULES.FOLLOW_UP_WINDOW_DAYS * 24 * 60 * 60 * 1000),
+        nextActionDate: new Date(Date.now() + SENDING_RULES.FOLLOW_UP_DELAY_DAYS * 24 * 60 * 60 * 1000),
       },
     });
 

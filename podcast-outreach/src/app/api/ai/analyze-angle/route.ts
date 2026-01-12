@@ -2,7 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
-import { Angle, Tier } from "@prisma/client";
+
+// Define types locally to avoid Prisma client dependency issues
+type Angle =
+  | "FAT_LOSS"
+  | "GENERAL_HEALTH"
+  | "LONGEVITY"
+  | "DADS_PARENTING"
+  | "CEO_PERFORMANCE"
+  | "PERSONAL_DEVELOPMENT"
+  | "EVIDENCE_BASED_NUTRITION"
+  | "BODY_RECOMPOSITION";
+
+type Tier = "PENDING" | "TIER_1" | "TIER_2" | "TIER_3";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -12,7 +24,7 @@ const analyzeSchema = z.object({
   podcastId: z.string(),
 });
 
-// Valid angles from Prisma enum
+// Valid angles
 const VALID_ANGLES: Angle[] = [
   "FAT_LOSS",
   "GENERAL_HEALTH",
