@@ -1,5 +1,7 @@
 "use client";
 
+// Weekly Workflow Dashboard - v1.0
+
 import { useQuery } from "@tanstack/react-query";
 import {
   Calendar,
