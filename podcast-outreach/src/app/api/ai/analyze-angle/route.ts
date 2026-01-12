@@ -9,6 +9,7 @@ const analyzeSchema = z.object({
 });
 
 // POST /api/ai/analyze-angle - Generate pitch angles for a podcast
+// Uses recentEpisodeTitles array from Podcast model (no separate Episode relation)
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
