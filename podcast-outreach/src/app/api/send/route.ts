@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sendEmail } from "@/lib/gmail";
 import { z } from "zod";
+import { SENDING_RULES } from "@/lib/constants";
 
 const sendSchema = z.object({
-  outreachId: z.string(),
+  podcastId: z.string(),
+  useBackupEmail: z.boolean().default(false),
   scheduledAt: z.string().datetime().optional(),
 });
 
@@ -12,41 +14,90 @@ const sendSchema = z.object({
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { outreachId, scheduledAt } = sendSchema.parse(body);
+    const { podcastId, useBackupEmail, scheduledAt } = sendSchema.parse(body);
 
-    // Get outreach with contact
-    const outreach = await db.outreach.findUnique({
-      where: { id: outreachId },
+    // Get podcast
+    const podcast = await db.podcast.findUnique({
+      where: { id: podcastId },
       include: {
-        contact: true,
-        podcast: true,
+        touches: {
+          orderBy: { sentAt: "desc" },
+          take: 5,
+        },
       },
     });
 
-    if (!outreach) {
+    if (!podcast) {
       return NextResponse.json(
-        { error: "Outreach not found" },
+        { error: "Podcast not found" },
         { status: 404 }
       );
     }
 
-    if (!outreach.contact?.email) {
+    // Determine which email to use
+    const emailToUse = useBackupEmail ? podcast.backupEmail : podcast.primaryEmail;
+
+    if (!emailToUse) {
       return NextResponse.json(
-        { error: "No contact email found" },
+        { error: useBackupEmail ? "No backup email found" : "No primary email found" },
         { status: 400 }
       );
     }
 
-    if (!outreach.subject || !outreach.body) {
+    if (!podcast.emailSubject || !podcast.emailDraft) {
       return NextResponse.json(
         { error: "Draft not complete - missing subject or body" },
         { status: 400 }
       );
     }
 
+    // Check QA status
+    if (podcast.qaStatus !== "PASS") {
+      return NextResponse.json(
+        { error: "Draft has not passed QA review" },
+        { status: 400 }
+      );
+    }
+
+    // Check sending limits
+    const todaySentCount = await db.touch.count({
+      where: {
+        sentAt: {
+          gte: new Date(new Date().setHours(0, 0, 0, 0)),
+        },
+      },
+    });
+
+    if (todaySentCount >= SENDING_RULES.DAILY_CAP) {
+      return NextResponse.json(
+        { error: `Daily send limit reached (${SENDING_RULES.DAILY_CAP})` },
+        { status: 429 }
+      );
+    }
+
+    // Determine touch type
+    const existingTouches = podcast.touches.length;
+    let touchType: "PRIMARY" | "FOLLOW_UP" | "BACKUP" = "PRIMARY";
+
+    if (useBackupEmail) {
+      touchType = "BACKUP";
+    } else if (existingTouches > 0) {
+      touchType = "FOLLOW_UP";
+    }
+
+    // Check follow-up limits
+    if (touchType === "FOLLOW_UP") {
+      const followUpCount = podcast.touches.filter((t: { type: string }) => t.type === "FOLLOW_UP").length;
+      if (followUpCount >= SENDING_RULES.MAX_FOLLOW_UPS) {
+        return NextResponse.json(
+          { error: `Maximum follow-ups reached (${SENDING_RULES.MAX_FOLLOW_UPS})` },
+          { status: 400 }
+        );
+      }
+    }
+
     // TODO: Handle scheduled sending
     if (scheduledAt) {
-      // Queue for later sending
       return NextResponse.json({
         message: "Email scheduled",
         scheduledAt,
@@ -55,26 +106,46 @@ export async function POST(request: NextRequest) {
 
     // Send immediately
     const result = await sendEmail({
-      to: outreach.contact.email,
-      subject: outreach.subject,
-      body: outreach.body,
+      to: emailToUse,
+      subject: podcast.emailSubject,
+      body: podcast.emailDraft,
     });
 
-    // Update outreach status
-    await db.outreach.update({
-      where: { id: outreachId },
+    // Create touch record
+    const touch = await db.touch.create({
       data: {
-        status: "sent",
+        podcastId: podcast.id,
+        type: touchType,
+        contactUsed: emailToUse,
         sentAt: new Date(),
-        gmailMessageId: result.messageId,
-        gmailThreadId: result.threadId,
+        emailBody: podcast.emailDraft,
+        emailSubject: podcast.emailSubject,
+      },
+    });
+
+    // Update podcast status
+    const newStatus = touchType === "PRIMARY" ? "SENT" :
+                      touchType === "FOLLOW_UP" ? "FOLLOW_UP_SENT" :
+                      "ESCALATED";
+
+    await db.podcast.update({
+      where: { id: podcastId },
+      data: {
+        status: newStatus,
+        ...(touchType === "PRIMARY" && { sentPrimaryAt: new Date() }),
+        ...(touchType === "FOLLOW_UP" && { followUpSentAt: new Date() }),
+        ...(touchType === "BACKUP" && { sentBackupAt: new Date() }),
+        nextAction: touchType === "PRIMARY" ? "FOLLOW_UP" : "CLOSE",
+        nextActionDate: new Date(Date.now() + SENDING_RULES.FOLLOW_UP_WINDOW_DAYS * 24 * 60 * 60 * 1000),
       },
     });
 
     return NextResponse.json({
       success: true,
+      touchId: touch.id,
       messageId: result.messageId,
       threadId: result.threadId,
+      type: touchType,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -97,25 +168,27 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get("status");
 
-    const where: Record<string, unknown> = {
-      sentAt: { not: null },
-    };
+    const where: Record<string, unknown> = {};
 
     if (status) {
-      where.status = status;
+      where.status = { in: status.split(",") };
+    } else {
+      // Default: show sent emails
+      where.status = { in: ["SENT", "FOLLOW_UP_SENT", "ESCALATED", "REPLIED"] };
     }
 
-    const sent = await db.outreach.findMany({
+    const podcasts = await db.podcast.findMany({
       where,
       include: {
-        podcast: true,
-        contact: true,
+        touches: {
+          orderBy: { sentAt: "desc" },
+        },
       },
-      orderBy: { sentAt: "desc" },
+      orderBy: { updatedAt: "desc" },
       take: 50,
     });
 
-    return NextResponse.json(sent);
+    return NextResponse.json(podcasts);
   } catch (error) {
     console.error("Error fetching sent emails:", error);
     return NextResponse.json(

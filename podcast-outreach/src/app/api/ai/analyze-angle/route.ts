@@ -2,27 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { analyzePodcastForAngles } from "@/lib/ai";
 import { z } from "zod";
+import { JOEY_PROFILE_DEFAULT } from "@/lib/constants";
 
 const analyzeSchema = z.object({
   podcastId: z.string(),
-  guestProfile: z.string().optional(),
 });
 
 // POST /api/ai/analyze-angle - Generate pitch angles for a podcast
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { podcastId, guestProfile } = analyzeSchema.parse(body);
+    const { podcastId } = analyzeSchema.parse(body);
 
-    // Get podcast with recent episodes
+    // Get podcast
     const podcast = await db.podcast.findUnique({
       where: { id: podcastId },
-      include: {
-        episodes: {
-          orderBy: { publishedAt: "desc" },
-          take: 5,
-        },
-      },
     });
 
     if (!podcast) {
@@ -32,56 +26,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get guest profile from settings if not provided
-    let profile = guestProfile;
-    if (!profile) {
-      const settings = await db.settings.findUnique({
-        where: { key: "guestProfile" },
-      });
-      profile = settings?.value || "A business professional seeking podcast opportunities.";
-    }
+    // Get Joey's profile from database or use default
+    const joeyProfile = await db.joeyProfile.findFirst();
+    const guestProfile = joeyProfile
+      ? [
+          ...joeyProfile.positioningStatements,
+          `Credentials: ${joeyProfile.credibilityAssets.join(", ")}`,
+          `Personal: ${joeyProfile.personalTraits.join(", ")}`,
+        ].join("\n")
+      : JOEY_PROFILE_DEFAULT.positioningStatements.join("\n");
 
     // Generate angles using AI
     const result = await analyzePodcastForAngles(
-      podcast.name,
-      podcast.description || "",
-      podcast.episodes.map((ep) => ({
-        title: ep.title,
-        description: ep.description || undefined,
-      })),
-      profile
+      podcast.showName,
+      podcast.showDescription || "",
+      podcast.recentEpisodeTitles.map((title: string) => ({ title })),
+      guestProfile
     );
 
-    // Save angles to database
-    const savedAngles = await Promise.all(
-      result.angles.map((angle) =>
-        db.angle.create({
-          data: {
-            podcastId,
-            title: angle.title,
-            description: angle.description,
-            hook: angle.hook,
-            talkingPoints: JSON.stringify(angle.talkingPoints),
-            relevanceScore: angle.relevanceScore,
-          },
-        })
-      )
-    );
-
-    // Update outreach status to researched
-    await db.outreach.updateMany({
-      where: {
-        podcastId,
-        status: "discovered",
-      },
-      data: {
-        status: "researched",
-      },
-    });
-
+    // Return the generated angles (not saving to separate table since angles are now an enum)
+    // The selected angle will be stored on the Podcast record
     return NextResponse.json({
-      angles: savedAngles,
-      podcast: podcast.name,
+      angles: result.angles,
+      podcast: podcast.showName,
+      suggestedAngle: result.angles[0]?.title || null,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

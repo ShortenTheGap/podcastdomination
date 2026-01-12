@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { getMessage, getThread } from "@/lib/gmail";
+import { getThread } from "@/lib/gmail";
 
 // POST /api/webhooks/gmail - Handle Gmail push notifications
 export async function POST(request: NextRequest) {
@@ -17,56 +17,119 @@ export async function POST(request: NextRequest) {
 
     console.log("Gmail webhook received:", { historyId, emailAddress });
 
-    // Get the new message
-    // In production, you'd use the History API to get changes since last historyId
-    // For now, we'll check our tracked threads for replies
-
-    const trackedOutreach = await db.outreach.findMany({
+    // Find touches that have been sent but not yet marked as replied
+    // We track replies by looking at touches that have Gmail thread context
+    const sentTouches = await db.touch.findMany({
       where: {
-        gmailThreadId: { not: null },
-        status: "sent",
+        replied: false,
+        bounced: false,
+        sentAt: { not: null },
+      },
+      include: {
+        podcast: true,
       },
     });
 
-    for (const outreach of trackedOutreach) {
-      if (!outreach.gmailThreadId) continue;
+    // For each touch, we need to check if the thread has replies
+    // In a full implementation, we'd store gmailThreadId on the Touch
+    // For now, we'll check podcasts that are in SENT status
 
-      try {
-        const thread = await getThread(outreach.gmailThreadId);
-        const messageCount = thread.messages?.length || 0;
+    const sentPodcasts = await db.podcast.findMany({
+      where: {
+        status: { in: ["SENT", "FOLLOW_UP_SENT", "ESCALATED"] },
+      },
+      include: {
+        touches: {
+          orderBy: { sentAt: "desc" },
+          take: 1,
+        },
+      },
+    });
 
-        // If there's more than one message, we got a reply
-        if (messageCount > 1) {
-          const latestMessage = thread.messages?.[messageCount - 1];
+    for (const podcast of sentPodcasts) {
+      const latestTouch = podcast.touches[0];
+      if (!latestTouch) continue;
 
-          // Check if this is a reply (not from us)
-          const fromHeader = latestMessage?.payload?.headers?.find(
-            (h) => h.name?.toLowerCase() === "from"
-          );
-
-          // Simple check - if the from address is different from ours
-          if (fromHeader && !fromHeader.value?.includes(emailAddress)) {
-            await db.outreach.update({
-              where: { id: outreach.id },
-              data: {
-                status: "replied",
-                repliedAt: new Date(),
-              },
-            });
-
-            console.log(`Reply detected for outreach ${outreach.id}`);
-          }
-        }
-      } catch (error) {
-        console.error(`Error checking thread ${outreach.gmailThreadId}:`, error);
-      }
+      // In a full implementation, we'd store and check gmailThreadId
+      // For now, log that we received a webhook
+      console.log(`Checking podcast ${podcast.id} for replies`);
     }
+
+    // Note: Full implementation would:
+    // 1. Store gmailThreadId on Touch records
+    // 2. Use Gmail History API to get changes since lastHistoryId
+    // 3. Match incoming messages to our tracked threads
+    // 4. Update Touch.replied and Podcast.status accordingly
 
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Gmail webhook error:", error);
     return NextResponse.json(
       { error: "Webhook processing failed" },
+      { status: 500 }
+    );
+  }
+}
+
+// Separate endpoint to manually check for replies (for testing/debugging)
+export async function PUT(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { threadId, podcastId } = body;
+
+    if (!threadId || !podcastId) {
+      return NextResponse.json(
+        { error: "threadId and podcastId required" },
+        { status: 400 }
+      );
+    }
+
+    const thread = await getThread(threadId);
+    const messageCount = thread.messages?.length || 0;
+
+    if (messageCount > 1) {
+      // Update the podcast and touch
+      await db.podcast.update({
+        where: { id: podcastId },
+        data: {
+          status: "REPLIED",
+          replyReceivedAt: new Date(),
+          nextAction: "CLOSE",
+        },
+      });
+
+      // Update the latest touch
+      const latestTouch = await db.touch.findFirst({
+        where: { podcastId },
+        orderBy: { sentAt: "desc" },
+      });
+
+      if (latestTouch) {
+        await db.touch.update({
+          where: { id: latestTouch.id },
+          data: {
+            replied: true,
+            repliedAt: new Date(),
+          },
+        });
+      }
+
+      return NextResponse.json({
+        success: true,
+        replied: true,
+        messageCount,
+      });
+    }
+
+    return NextResponse.json({
+      success: true,
+      replied: false,
+      messageCount,
+    });
+  } catch (error) {
+    console.error("Error checking thread:", error);
+    return NextResponse.json(
+      { error: "Failed to check thread" },
       { status: 500 }
     );
   }

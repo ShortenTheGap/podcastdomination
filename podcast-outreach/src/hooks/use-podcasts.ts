@@ -4,18 +4,24 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type {
   Podcast,
   PodcastWithRelations,
-  OutreachWithRelations,
   PipelineFilters,
   DiscoveryRequest,
   DiscoveryResult,
+  AngleResult,
+  DraftResult,
+  SendEmailResult,
+  Angle,
+  OutreachStatus,
 } from "@/types";
 
 // Fetch all podcasts
-export function usePodcasts() {
-  return useQuery<Podcast[]>({
-    queryKey: ["podcasts"],
+export function usePodcasts(status?: OutreachStatus[]) {
+  return useQuery<PodcastWithRelations[]>({
+    queryKey: ["podcasts", status],
     queryFn: async () => {
-      const res = await fetch("/api/podcasts");
+      const params = new URLSearchParams();
+      if (status?.length) params.set("status", status.join(","));
+      const res = await fetch(`/api/podcasts?${params}`);
       if (!res.ok) throw new Error("Failed to fetch podcasts");
       return res.json();
     },
@@ -35,18 +41,18 @@ export function usePodcast(id: string) {
   });
 }
 
-// Fetch pipeline data
+// Fetch pipeline data (podcasts organized by status)
 export function usePipeline(filters?: PipelineFilters) {
-  return useQuery<OutreachWithRelations[]>({
+  return useQuery<PodcastWithRelations[]>({
     queryKey: ["pipeline", filters],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (filters?.search) params.set("search", filters.search);
-      if (filters?.category) params.set("category", filters.category);
-      if (filters?.priority !== undefined)
-        params.set("priority", String(filters.priority));
+      if (filters?.status?.length) params.set("status", filters.status.join(","));
+      if (filters?.tier?.length) params.set("tier", filters.tier.join(","));
+      if (filters?.angle?.length) params.set("angle", filters.angle.join(","));
 
-      const res = await fetch(`/api/podcasts/pipeline?${params}`);
+      const res = await fetch(`/api/podcasts?${params}`);
       if (!res.ok) throw new Error("Failed to fetch pipeline");
       return res.json();
     },
@@ -57,7 +63,7 @@ export function usePipeline(filters?: PipelineFilters) {
 export function useDiscovery() {
   const queryClient = useQueryClient();
 
-  return useMutation<DiscoveryResult[], Error, DiscoveryRequest>({
+  return useMutation<{ results: DiscoveryResult[]; count: number }, Error, DiscoveryRequest>({
     mutationFn: async (request) => {
       const res = await fetch("/api/discovery", {
         method: "POST",
@@ -94,25 +100,27 @@ export function useImportPodcast() {
   });
 }
 
-// Update outreach status
-export function useUpdateOutreach() {
+// Update podcast
+export function useUpdatePodcast() {
   const queryClient = useQueryClient();
 
   return useMutation<
-    OutreachWithRelations,
+    PodcastWithRelations,
     Error,
-    { id: string; data: Partial<OutreachWithRelations> }
+    { id: string; data: Partial<Podcast> }
   >({
     mutationFn: async ({ id, data }) => {
-      const res = await fetch(`/api/podcasts/outreach/${id}`, {
+      const res = await fetch(`/api/podcasts/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error("Failed to update outreach");
+      if (!res.ok) throw new Error("Failed to update podcast");
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ["podcasts"] });
+      queryClient.invalidateQueries({ queryKey: ["podcasts", id] });
       queryClient.invalidateQueries({ queryKey: ["pipeline"] });
     },
   });
@@ -122,16 +130,12 @@ export function useUpdateOutreach() {
 export function useGenerateAngles() {
   const queryClient = useQueryClient();
 
-  return useMutation<
-    { angles: Array<{ title: string; description: string }> },
-    Error,
-    { podcastId: string }
-  >({
-    mutationFn: async ({ podcastId }) => {
+  return useMutation<AngleResult, Error, { podcastId: string; guestProfile?: string }>({
+    mutationFn: async ({ podcastId, guestProfile }) => {
       const res = await fetch("/api/ai/analyze-angle", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ podcastId }),
+        body: JSON.stringify({ podcastId, guestProfile }),
       });
       if (!res.ok) throw new Error("Failed to generate angles");
       return res.json();
@@ -146,11 +150,7 @@ export function useGenerateAngles() {
 export function useGenerateDraft() {
   const queryClient = useQueryClient();
 
-  return useMutation<
-    { subject: string; body: string },
-    Error,
-    { podcastId: string; angleId: string; contactId?: string }
-  >({
+  return useMutation<DraftResult, Error, { podcastId: string; angle: Angle }>({
     mutationFn: async (data) => {
       const res = await fetch("/api/ai/generate-draft", {
         method: "POST",
@@ -160,7 +160,49 @@ export function useGenerateDraft() {
       if (!res.ok) throw new Error("Failed to generate draft");
       return res.json();
     },
+    onSuccess: (_, { podcastId }) => {
+      queryClient.invalidateQueries({ queryKey: ["podcasts", podcastId] });
+      queryClient.invalidateQueries({ queryKey: ["pipeline"] });
+      queryClient.invalidateQueries({ queryKey: ["drafts"] });
+    },
+  });
+}
+
+// Fetch drafts pending review
+export function useDrafts(status?: string, qaStatus?: string) {
+  return useQuery<PodcastWithRelations[]>({
+    queryKey: ["drafts", status, qaStatus],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (status) params.set("status", status);
+      if (qaStatus) params.set("qaStatus", qaStatus);
+      const res = await fetch(`/api/draft?${params}`);
+      if (!res.ok) throw new Error("Failed to fetch drafts");
+      return res.json();
+    },
+  });
+}
+
+// Update draft
+export function useUpdateDraft() {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    PodcastWithRelations,
+    Error,
+    { podcastId: string; emailSubject?: string; emailDraft?: string; status?: OutreachStatus }
+  >({
+    mutationFn: async (data) => {
+      const res = await fetch("/api/draft", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to update draft");
+      return res.json();
+    },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["drafts"] });
       queryClient.invalidateQueries({ queryKey: ["pipeline"] });
     },
   });
@@ -170,18 +212,33 @@ export function useGenerateDraft() {
 export function useSendEmail() {
   const queryClient = useQueryClient();
 
-  return useMutation<{ messageId: string }, Error, { outreachId: string }>({
-    mutationFn: async ({ outreachId }) => {
+  return useMutation<SendEmailResult, Error, { podcastId: string; useBackupEmail?: boolean }>({
+    mutationFn: async ({ podcastId, useBackupEmail }) => {
       const res = await fetch("/api/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ outreachId }),
+        body: JSON.stringify({ podcastId, useBackupEmail }),
       });
       if (!res.ok) throw new Error("Failed to send email");
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["pipeline"] });
+      queryClient.invalidateQueries({ queryKey: ["podcasts"] });
+    },
+  });
+}
+
+// Fetch sent emails
+export function useSentEmails(status?: string) {
+  return useQuery<PodcastWithRelations[]>({
+    queryKey: ["sent", status],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (status) params.set("status", status);
+      const res = await fetch(`/api/send?${params}`);
+      if (!res.ok) throw new Error("Failed to fetch sent emails");
+      return res.json();
     },
   });
 }

@@ -3,16 +3,21 @@ import { db } from "@/lib/db";
 import { z } from "zod";
 
 const createPodcastSchema = z.object({
-  name: z.string().min(1),
-  description: z.string().optional(),
-  website: z.string().url().optional(),
-  rssFeed: z.string().url().optional(),
-  appleId: z.string().optional(),
-  spotifyId: z.string().optional(),
-  youtubeId: z.string().optional(),
-  category: z.string().optional(),
-  source: z.string().default("manual"),
-  episodeCount: z.number().default(0),
+  showName: z.string().min(1),
+  hostName: z.string().optional(),
+  showDescription: z.string().optional(),
+  websiteUrl: z.string().url().optional().nullable(),
+  applePodcastUrl: z.string().url().optional().nullable(),
+  spotifyUrl: z.string().url().optional().nullable(),
+  primaryPlatformUrl: z.string().url(),
+  primaryEmail: z.string().email().optional().nullable(),
+  primaryEmailSourceUrl: z.string().url().optional().nullable(),
+  backupEmail: z.string().email().optional().nullable(),
+  backupEmailSourceUrl: z.string().url().optional().nullable(),
+  discoverySource: z.string().optional(),
+  recentEpisodeTitles: z.array(z.string()).optional().default([]),
+  recentGuests: z.array(z.string()).optional().default([]),
+  dedupeKey: z.string(),
 });
 
 // GET /api/podcasts - List all podcasts
@@ -20,7 +25,8 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const search = searchParams.get("search");
-    const category = searchParams.get("category");
+    const status = searchParams.get("status");
+    const tier = searchParams.get("tier");
     const limit = parseInt(searchParams.get("limit") || "50");
     const offset = parseInt(searchParams.get("offset") || "0");
 
@@ -28,13 +34,18 @@ export async function GET(request: NextRequest) {
 
     if (search) {
       where.OR = [
-        { name: { contains: search } },
-        { description: { contains: search } },
+        { showName: { contains: search, mode: "insensitive" } },
+        { hostName: { contains: search, mode: "insensitive" } },
+        { showDescription: { contains: search, mode: "insensitive" } },
       ];
     }
 
-    if (category) {
-      where.category = category;
+    if (status) {
+      where.status = status;
+    }
+
+    if (tier) {
+      where.tier = tier;
     }
 
     const podcasts = await db.podcast.findMany({
@@ -45,15 +56,21 @@ export async function GET(request: NextRequest) {
       include: {
         _count: {
           select: {
-            contacts: true,
-            outreach: true,
-            angles: true,
+            touches: true,
+            notes: true,
           },
         },
       },
     });
 
-    return NextResponse.json(podcasts);
+    const total = await db.podcast.count({ where });
+
+    return NextResponse.json({
+      podcasts,
+      total,
+      limit,
+      offset,
+    });
   } catch (error) {
     console.error("Error fetching podcasts:", error);
     return NextResponse.json(
@@ -69,15 +86,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const data = createPodcastSchema.parse(body);
 
-    // Check for duplicates
-    const existing = await db.podcast.findFirst({
-      where: {
-        OR: [
-          data.appleId ? { appleId: data.appleId } : {},
-          data.spotifyId ? { spotifyId: data.spotifyId } : {},
-          { name: data.name },
-        ].filter((o) => Object.keys(o).length > 0),
-      },
+    // Check for duplicates by dedupeKey
+    const existing = await db.podcast.findUnique({
+      where: { dedupeKey: data.dedupeKey },
     });
 
     if (existing) {
@@ -88,14 +99,12 @@ export async function POST(request: NextRequest) {
     }
 
     const podcast = await db.podcast.create({
-      data,
-    });
-
-    // Create initial outreach entry
-    await db.outreach.create({
       data: {
-        podcastId: podcast.id,
-        status: "discovered",
+        ...data,
+        status: "NOT_CONTACTED",
+        tier: "PENDING",
+        isNew: true,
+        discoveryBatch: new Date().toISOString().slice(0, 7), // "2026-01"
       },
     });
 

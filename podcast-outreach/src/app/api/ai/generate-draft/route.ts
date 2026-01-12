@@ -1,93 +1,100 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { generateEmailDraft } from "@/lib/ai";
-import { parseJSON } from "@/lib/utils";
 import { z } from "zod";
+import { JOEY_PROFILE_DEFAULT, ANGLE_CONFIG } from "@/lib/constants";
+
+// Define Angle type locally (matches Prisma enum)
+type Angle =
+  | "FAT_LOSS"
+  | "GENERAL_HEALTH"
+  | "LONGEVITY"
+  | "DADS_PARENTING"
+  | "CEO_PERFORMANCE"
+  | "PERSONAL_DEVELOPMENT"
+  | "EVIDENCE_BASED_NUTRITION"
+  | "BODY_RECOMPOSITION";
 
 const generateSchema = z.object({
   podcastId: z.string(),
-  angleId: z.string(),
-  contactId: z.string().optional(),
-  templateId: z.string().optional(),
+  angle: z.enum([
+    "FAT_LOSS",
+    "GENERAL_HEALTH",
+    "LONGEVITY",
+    "DADS_PARENTING",
+    "CEO_PERFORMANCE",
+    "PERSONAL_DEVELOPMENT",
+    "EVIDENCE_BASED_NUTRITION",
+    "BODY_RECOMPOSITION",
+  ]),
+  leadMagnetId: z.string().optional(),
 });
 
 // POST /api/ai/generate-draft - Generate email draft
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { podcastId, angleId, contactId, templateId } = generateSchema.parse(body);
+    const { podcastId, angle, leadMagnetId } = generateSchema.parse(body);
 
-    // Get podcast, angle, and optional contact
-    const [podcast, angle, contact, template] = await Promise.all([
-      db.podcast.findUnique({ where: { id: podcastId } }),
-      db.angle.findUnique({ where: { id: angleId } }),
-      contactId ? db.contact.findUnique({ where: { id: contactId } }) : null,
-      templateId ? db.emailTemplate.findUnique({ where: { id: templateId } }) : null,
-    ]);
+    // Get podcast
+    const podcast = await db.podcast.findUnique({
+      where: { id: podcastId },
+    });
 
     if (!podcast) {
       return NextResponse.json({ error: "Podcast not found" }, { status: 404 });
     }
 
-    if (!angle) {
-      return NextResponse.json({ error: "Angle not found" }, { status: 404 });
-    }
+    // Get Joey's profile
+    const joeyProfile = await db.joeyProfile.findFirst();
+    const guestProfile = joeyProfile
+      ? [
+          ...joeyProfile.positioningStatements,
+          `Credentials: ${joeyProfile.credibilityAssets.join(", ")}`,
+          `Personal: ${joeyProfile.personalTraits.join(", ")}`,
+        ].join("\n")
+      : JOEY_PROFILE_DEFAULT.positioningStatements.join("\n");
 
-    // Get guest profile from settings
-    const settings = await db.settings.findUnique({
-      where: { key: "guestProfile" },
-    });
-    const guestProfile = settings?.value || "A business professional seeking podcast opportunities.";
+    // Get lead magnet if specified
+    const leadMagnet = leadMagnetId
+      ? await db.leadMagnet.findUnique({ where: { id: leadMagnetId } })
+      : await db.leadMagnet.findFirst({ where: { isDefault: true } });
+
+    // Get angle label
+    const angleConfig = ANGLE_CONFIG.find((a) => a.id === angle);
+    const angleLabel = angleConfig?.label || angle;
 
     // Generate draft using AI
     const draft = await generateEmailDraft(
-      podcast.name,
-      contact?.name || "Podcast Host",
+      podcast.showName,
+      podcast.hostName || "Podcast Host",
       {
-        title: angle.title,
-        hook: angle.hook,
-        talkingPoints: parseJSON<string[]>(angle.talkingPoints, []),
+        title: angleLabel,
+        hook: podcast.tier2Anchor || `Your show's focus on ${angleLabel.toLowerCase()}`,
+        talkingPoints: joeyProfile?.connectionHooks || JOEY_PROFILE_DEFAULT.connectionHooks,
       },
       guestProfile,
-      template?.body
+      leadMagnet?.ctaSnippet
     );
 
-    // Find or create outreach record
-    let outreach = await db.outreach.findFirst({
-      where: {
-        podcastId,
-        status: { in: ["discovered", "researched"] },
+    // Update podcast with draft
+    const updated = await db.podcast.update({
+      where: { id: podcastId },
+      data: {
+        emailDraft: draft.body,
+        emailSubject: draft.subject,
+        selectedAngle: angle as Angle,
+        selectedLeadMagnet: leadMagnet?.name,
+        status: "DRAFTED",
       },
     });
 
-    if (outreach) {
-      outreach = await db.outreach.update({
-        where: { id: outreach.id },
-        data: {
-          angleId,
-          contactId,
-          subject: draft.subject,
-          body: draft.body,
-          status: "drafted",
-        },
-      });
-    } else {
-      outreach = await db.outreach.create({
-        data: {
-          podcastId,
-          angleId,
-          contactId,
-          subject: draft.subject,
-          body: draft.body,
-          status: "drafted",
-        },
-      });
-    }
-
     return NextResponse.json({
-      outreachId: outreach.id,
+      podcastId: updated.id,
       subject: draft.subject,
       body: draft.body,
+      angle: angle,
+      leadMagnet: leadMagnet?.name,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

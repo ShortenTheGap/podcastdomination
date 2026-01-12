@@ -2,97 +2,71 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 const discoverySchema = z.object({
-  source: z.enum(["apple", "spotify", "youtube", "manual"]),
-  query: z.string().optional(),
-  category: z.string().optional(),
+  type: z.enum(["seed_guest", "category"]),
+  query: z.string().min(1),
   limit: z.number().default(20),
 });
 
-// Mock discovery results for now - will be replaced with actual API calls
+// Mock Apple Podcasts search - will be replaced with Python scraper call
 async function searchApplePodcasts(query: string, limit: number) {
-  // TODO: Implement Apple Podcasts API search
-  // For now, return mock data
-  return [
-    {
-      id: `apple-${Date.now()}`,
-      name: `${query} Podcast`,
-      description: `A podcast about ${query}`,
-      episodeCount: 100,
-      source: "apple",
-      sourceId: `apple-${Date.now()}`,
-    },
-  ];
-}
+  const url = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=podcast&entity=podcast&limit=${limit}`;
 
-async function searchSpotifyPodcasts(query: string, limit: number) {
-  // TODO: Implement Spotify API search
-  return [
-    {
-      id: `spotify-${Date.now()}`,
-      name: `${query} Show`,
-      description: `Discussing ${query} topics`,
-      episodeCount: 50,
-      source: "spotify",
-      sourceId: `spotify-${Date.now()}`,
-    },
-  ];
-}
+  try {
+    const response = await fetch(url);
+    const data = await response.json();
 
-async function searchYouTubePodcasts(query: string, limit: number) {
-  // TODO: Implement YouTube API search
-  return [
-    {
-      id: `youtube-${Date.now()}`,
-      name: `${query} Channel`,
-      description: `Video podcast about ${query}`,
-      episodeCount: 200,
-      source: "youtube",
-      sourceId: `youtube-${Date.now()}`,
-    },
-  ];
+    return data.results.map((item: Record<string, unknown>) => ({
+      showName: item.collectionName as string,
+      hostName: item.artistName as string,
+      showDescription: (item.description as string) || "",
+      primaryPlatformUrl: item.collectionViewUrl as string,
+      applePodcastUrl: item.collectionViewUrl as string,
+      websiteUrl: null,
+      spotifyUrl: null,
+      dedupeKey: `apple:${item.collectionId}`,
+      recentEpisodeTitles: [],
+      recentGuests: [],
+      primaryEmail: null,
+      primaryEmailSourceUrl: null,
+      backupEmail: null,
+      backupEmailSourceUrl: null,
+      discoverySource: `category:${query}`,
+      riskSignals: [],
+    }));
+  } catch (error) {
+    console.error("Apple search error:", error);
+    return [];
+  }
 }
 
 // POST /api/discovery - Search for podcasts
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { source, query, category, limit } = discoverySchema.parse(body);
+    const { type, query, limit } = discoverySchema.parse(body);
 
-    if (!query && !category) {
-      return NextResponse.json(
-        { error: "Query or category is required" },
-        { status: 400 }
-      );
+    let results;
+
+    if (type === "seed_guest") {
+      // For seed guest searches, we'd call the Python discovery engine
+      // For now, search Apple with the guest name
+      results = await searchApplePodcasts(query, limit);
+      results = results.map((r: Record<string, unknown>) => ({
+        ...r,
+        discoverySource: `seed:${query}`,
+        recentGuests: [query],
+      }));
+    } else {
+      // Category search
+      results = await searchApplePodcasts(query, limit);
     }
 
-    const searchTerm = query || category || "";
-    let results: Array<{
-      id: string;
-      name: string;
-      description: string;
-      episodeCount: number;
-      source: string;
-      sourceId: string;
-    }> = [];
-
-    switch (source) {
-      case "apple":
-        results = await searchApplePodcasts(searchTerm, limit);
-        break;
-      case "spotify":
-        results = await searchSpotifyPodcasts(searchTerm, limit);
-        break;
-      case "youtube":
-        results = await searchYouTubePodcasts(searchTerm, limit);
-        break;
-      default:
-        return NextResponse.json(
-          { error: "Invalid source" },
-          { status: 400 }
-        );
-    }
-
-    return NextResponse.json(results);
+    return NextResponse.json({
+      results,
+      count: results.length,
+      query,
+      type,
+    });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { usePipeline, useUpdateOutreach } from "@/hooks/use-podcasts";
+import { usePipeline, useUpdatePodcast } from "@/hooks/use-podcasts";
 import { PIPELINE_STAGES } from "@/lib/constants";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -15,27 +15,31 @@ import {
   MoreVertical,
   GripVertical,
 } from "lucide-react";
+import type { OutreachStatus } from "@/types";
 
 export default function PipelinePage() {
   const [search, setSearch] = useState("");
-  const { data: outreach, isLoading } = usePipeline({ search });
-  const updateOutreach = useUpdateOutreach();
+  const { data: podcasts, isLoading } = usePipeline({ search });
+  const updatePodcast = useUpdatePodcast();
 
-  // Group outreach by status
+  // Group podcasts by status
   const columns = PIPELINE_STAGES.map((stage) => ({
     ...stage,
-    items: outreach?.filter((o) => o.status === stage.id) || [],
+    items: podcasts?.filter((p) => p.status === stage.id) || [],
   }));
 
-  const handleDragStart = (e: React.DragEvent, outreachId: string) => {
-    e.dataTransfer.setData("outreachId", outreachId);
+  const handleDragStart = (e: React.DragEvent, podcastId: string) => {
+    e.dataTransfer.setData("podcastId", podcastId);
   };
 
   const handleDrop = (e: React.DragEvent, newStatus: string) => {
     e.preventDefault();
-    const outreachId = e.dataTransfer.getData("outreachId");
-    if (outreachId) {
-      updateOutreach.mutate({ id: outreachId, data: { status: newStatus } });
+    const podcastId = e.dataTransfer.getData("podcastId");
+    if (podcastId) {
+      updatePodcast.mutate({
+        id: podcastId,
+        data: { status: newStatus as OutreachStatus },
+      });
     }
   };
 
@@ -99,18 +103,18 @@ export default function PipelinePage() {
                     No podcasts
                   </div>
                 ) : (
-                  column.items.map((item) => (
+                  column.items.map((podcast) => (
                     <Card
-                      key={item.id}
+                      key={podcast.id}
                       className="cursor-grab active:cursor-grabbing"
                       draggable
-                      onDragStart={(e) => handleDragStart(e, item.id)}
+                      onDragStart={(e) => handleDragStart(e, podcast.id)}
                     >
                       <CardHeader className="p-4 pb-2">
                         <div className="flex items-start justify-between gap-2">
                           <GripVertical className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
                           <CardTitle className="text-sm font-medium flex-1">
-                            {item.podcast.name}
+                            {podcast.showName}
                           </CardTitle>
                           <Button variant="ghost" size="icon" className="h-6 w-6">
                             <MoreVertical className="h-4 w-4" />
@@ -119,26 +123,40 @@ export default function PipelinePage() {
                       </CardHeader>
                       <CardContent className="p-4 pt-0">
                         <p className="text-xs text-gray-500 line-clamp-2 mb-3">
-                          {item.podcast.description || "No description"}
+                          {podcast.showDescription || "No description"}
                         </p>
                         <div className="flex items-center gap-2 text-xs text-gray-400">
-                          {item.contact?.email && (
+                          {podcast.primaryEmail && (
                             <div className="flex items-center gap-1">
                               <Mail className="h-3 w-3" />
                               <span className="truncate max-w-[100px]">
-                                {item.contact.email}
+                                {podcast.primaryEmail}
                               </span>
                             </div>
                           )}
-                          {item.sentAt && (
+                          {podcast.sentPrimaryAt && (
                             <div className="flex items-center gap-1">
                               <Calendar className="h-3 w-3" />
                               <span>
-                                {new Date(item.sentAt).toLocaleDateString()}
+                                {new Date(podcast.sentPrimaryAt).toLocaleDateString()}
                               </span>
                             </div>
                           )}
                         </div>
+                        {podcast.tier && podcast.tier !== "PENDING" && (
+                          <Badge
+                            variant={
+                              podcast.tier === "TIER_1"
+                                ? "default"
+                                : podcast.tier === "TIER_2"
+                                ? "secondary"
+                                : "destructive"
+                            }
+                            className="mt-2 text-xs"
+                          >
+                            {podcast.tier.replace("_", " ")}
+                          </Badge>
+                        )}
                       </CardContent>
                     </Card>
                   ))

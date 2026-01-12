@@ -3,32 +3,64 @@ import { db } from "@/lib/db";
 import { z } from "zod";
 
 const updateDraftSchema = z.object({
-  outreachId: z.string(),
-  subject: z.string().optional(),
-  body: z.string().optional(),
-  status: z.string().optional(),
+  podcastId: z.string(),
+  emailSubject: z.string().optional(),
+  emailDraft: z.string().optional(),
+  status: z.enum([
+    "NOT_CONTACTED",
+    "READY_TO_DRAFT",
+    "DRAFTED",
+    "QA_APPROVED",
+    "SENT",
+    "FOLLOW_UP_DUE",
+    "FOLLOW_UP_SENT",
+    "ESCALATION_DUE",
+    "ESCALATED",
+    "REPLIED",
+    "CLOSED",
+  ]).optional(),
+  qaStatus: z.enum(["NOT_READY", "PENDING_REVIEW", "PASS", "NEEDS_REVISION"]).optional(),
 });
 
 // GET /api/draft - Get drafts pending review
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const status = searchParams.get("status") || "drafted";
+    const status = searchParams.get("status") || "DRAFTED";
+    const qaStatus = searchParams.get("qaStatus");
 
-    const drafts = await db.outreach.findMany({
-      where: {
-        status: {
-          in: status.split(","),
-        },
-        subject: { not: null },
-        body: { not: null },
+    const where: Record<string, unknown> = {
+      status: {
+        in: status.split(","),
       },
-      include: {
-        podcast: true,
-        contact: true,
-        angle: true,
+      emailSubject: { not: null },
+      emailDraft: { not: null },
+    };
+
+    if (qaStatus) {
+      where.qaStatus = { in: qaStatus.split(",") };
+    }
+
+    const drafts = await db.podcast.findMany({
+      where,
+      orderBy: [{ updatedAt: "desc" }],
+      select: {
+        id: true,
+        showName: true,
+        hostName: true,
+        primaryEmail: true,
+        emailSubject: true,
+        emailDraft: true,
+        selectedAngle: true,
+        status: true,
+        qaStatus: true,
+        qaChecklist: true,
+        tier: true,
+        tier2Anchor: true,
+        tier1AddOnLine: true,
+        createdAt: true,
+        updatedAt: true,
       },
-      orderBy: [{ priority: "desc" }, { createdAt: "desc" }],
     });
 
     return NextResponse.json(drafts);
@@ -45,19 +77,35 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
-    const { outreachId, ...data } = updateDraftSchema.parse(body);
+    const { podcastId, ...data } = updateDraftSchema.parse(body);
 
-    const outreach = await db.outreach.update({
-      where: { id: outreachId },
-      data,
-      include: {
-        podcast: true,
-        contact: true,
-        angle: true,
+    const podcast = await db.podcast.update({
+      where: { id: podcastId },
+      data: {
+        ...data,
+        // If moving to QA_APPROVED, set qaApprovedAt
+        ...(data.status === "QA_APPROVED" && {
+          qaApprovedAt: new Date(),
+          qaStatus: "PASS",
+        }),
+      },
+      select: {
+        id: true,
+        showName: true,
+        hostName: true,
+        primaryEmail: true,
+        emailSubject: true,
+        emailDraft: true,
+        selectedAngle: true,
+        status: true,
+        qaStatus: true,
+        qaChecklist: true,
+        tier: true,
+        updatedAt: true,
       },
     });
 
-    return NextResponse.json(outreach);
+    return NextResponse.json(podcast);
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
@@ -77,47 +125,33 @@ export async function PATCH(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { podcastId, contactId, subject, body: emailBody } = body;
+    const { podcastId, emailSubject, emailDraft, selectedAngle } = body;
 
-    // Find or create outreach
-    let outreach = await db.outreach.findFirst({
-      where: {
-        podcastId,
-        status: { in: ["discovered", "researched"] },
+    const podcast = await db.podcast.update({
+      where: { id: podcastId },
+      data: {
+        emailSubject,
+        emailDraft,
+        selectedAngle,
+        status: "DRAFTED",
+        qaStatus: "PENDING_REVIEW",
+      },
+      select: {
+        id: true,
+        showName: true,
+        hostName: true,
+        primaryEmail: true,
+        emailSubject: true,
+        emailDraft: true,
+        selectedAngle: true,
+        status: true,
+        qaStatus: true,
+        tier: true,
+        updatedAt: true,
       },
     });
 
-    if (outreach) {
-      outreach = await db.outreach.update({
-        where: { id: outreach.id },
-        data: {
-          contactId,
-          subject,
-          body: emailBody,
-          status: "drafted",
-        },
-        include: {
-          podcast: true,
-          contact: true,
-        },
-      });
-    } else {
-      outreach = await db.outreach.create({
-        data: {
-          podcastId,
-          contactId,
-          subject,
-          body: emailBody,
-          status: "drafted",
-        },
-        include: {
-          podcast: true,
-          contact: true,
-        },
-      });
-    }
-
-    return NextResponse.json(outreach, { status: 201 });
+    return NextResponse.json(podcast, { status: 201 });
   } catch (error) {
     console.error("Error creating draft:", error);
     return NextResponse.json(
