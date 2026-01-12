@@ -1,0 +1,192 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Podcast discovered from various sources
+model Podcast {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  website     String?
+  rssFeed     String?
+  appleId     String?  @unique
+  spotifyId   String?  @unique
+  youtubeId   String?  @unique
+
+  // Metadata
+  category    String?
+  subcategory String?
+  language    String   @default("en")
+  episodeCount Int     @default(0)
+  avgEpisodeLength Int? // in minutes
+
+  // Audience metrics
+  listenerCount   Int?
+  rating          Float?
+  reviewCount     Int?
+
+  // Discovery info
+  source          String   // where we found it (apple, spotify, manual, etc)
+  discoveredAt    DateTime @default(now())
+  lastScrapedAt   DateTime?
+
+  // Relations
+  contacts    Contact[]
+  episodes    Episode[]
+  outreach    Outreach[]
+  angles      Angle[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Individual episodes for transcript analysis
+model Episode {
+  id          String   @id @default(cuid())
+  podcastId   String
+  podcast     Podcast  @relation(fields: [podcastId], references: [id], onDelete: Cascade)
+
+  title       String
+  description String?
+  publishedAt DateTime?
+  duration    Int?     // in seconds
+  audioUrl    String?
+  youtubeUrl  String?
+
+  // Transcript
+  transcript     String?
+  transcriptSource String? // youtube, whisper, manual
+
+  // AI analysis
+  topics      String?  // JSON array of topics
+  guestName   String?
+  guestTitle  String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([podcastId])
+}
+
+// Contact information for podcast hosts/producers
+model Contact {
+  id          String   @id @default(cuid())
+  podcastId   String
+  podcast     Podcast  @relation(fields: [podcastId], references: [id], onDelete: Cascade)
+
+  name        String
+  email       String?
+  role        String   @default("host") // host, producer, booking
+
+  // Social profiles
+  linkedinUrl String?
+  twitterUrl  String?
+
+  // Verification
+  emailVerified Boolean @default(false)
+  emailSource   String? // where we found it
+
+  outreach    Outreach[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([podcastId])
+  @@index([email])
+}
+
+// AI-generated pitch angles
+model Angle {
+  id          String   @id @default(cuid())
+  podcastId   String
+  podcast     Podcast  @relation(fields: [podcastId], references: [id], onDelete: Cascade)
+
+  title       String
+  description String
+  hook        String   // Opening hook for email
+  talkingPoints String // JSON array
+
+  // Scoring
+  relevanceScore Float  @default(0)
+  approved       Boolean @default(false)
+
+  outreach    Outreach[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([podcastId])
+}
+
+// Outreach tracking (the pipeline)
+model Outreach {
+  id          String   @id @default(cuid())
+  podcastId   String
+  podcast     Podcast  @relation(fields: [podcastId], references: [id], onDelete: Cascade)
+  contactId   String?
+  contact     Contact? @relation(fields: [contactId], references: [id])
+  angleId     String?
+  angle       Angle?   @relation(fields: [angleId], references: [id])
+
+  // Pipeline status
+  status      String   @default("discovered") // discovered, researched, drafted, review, sent, replied, booked, rejected
+  priority    Int      @default(0) // higher = more important
+
+  // Email content
+  subject     String?
+  body        String?
+
+  // Tracking
+  sentAt      DateTime?
+  openedAt    DateTime?
+  repliedAt   DateTime?
+  bookedAt    DateTime?
+
+  // Gmail integration
+  gmailThreadId  String?
+  gmailMessageId String?
+
+  // Follow-up
+  followUpCount  Int      @default(0)
+  lastFollowUpAt DateTime?
+  nextFollowUpAt DateTime?
+
+  // Notes
+  notes       String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([podcastId])
+  @@index([status])
+  @@index([contactId])
+}
+
+// User settings and configuration
+model Settings {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String   // JSON value
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Email templates
+model EmailTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  subject     String
+  body        String
+  type        String   @default("initial") // initial, followup1, followup2, etc
+
+  isDefault   Boolean  @default(false)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
