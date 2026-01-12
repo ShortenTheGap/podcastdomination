@@ -1,288 +1,277 @@
 #!/usr/bin/env python3
 """
 Contact Finder
-Discovers email addresses and contact information for podcast hosts
+Finds and verifies contact emails for podcasts.
+Implements the strict "email must have source URL" rule.
 """
 
+import asyncio
+import aiohttp
 import re
+from typing import Optional, List, Tuple
 from dataclasses import dataclass
-from typing import List, Optional, Set
-from urllib.parse import urljoin, urlparse
-
-import requests
 from bs4 import BeautifulSoup
+from urllib.parse import urlparse, urljoin
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 @dataclass
-class Contact:
-    """Represents a discovered contact"""
+class ContactResult:
+    """A verified contact with source"""
     email: str
-    name: Optional[str] = None
-    role: str = "host"
-    source: str = "website"
-    confidence: float = 0.5
-    linkedin_url: Optional[str] = None
-    twitter_url: Optional[str] = None
+    source_url: str  # REQUIRED - where this email was found
+    contact_type: str  # "booking", "host", "producer", "general"
+    confidence: float  # 0.0 to 1.0
 
 
 class ContactFinder:
-    """Finds contact information from websites and social profiles"""
+    """
+    Email discovery with source verification.
 
-    # Common email patterns to look for
-    EMAIL_PATTERN = re.compile(
-        r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
-        re.IGNORECASE
-    )
-
-    # Email addresses to exclude
-    EXCLUDED_DOMAINS = {
-        "example.com", "email.com", "yourdomain.com",
-        "domain.com", "company.com", "test.com",
-        "sentry.io", "cloudflare.com",
-    }
-
-    EXCLUDED_PREFIXES = {
-        "noreply", "no-reply", "donotreply", "mailer-daemon",
-        "postmaster", "webmaster", "admin", "info@",
-        "support", "help", "contact@", "hello@",
-    }
+    CRITICAL RULE: Every email MUST have a source_url where it was found.
+    If we can't prove where we found the email, we don't use it.
+    """
 
     def __init__(self):
-        self.session = requests.Session()
-        self.session.headers.update({
-            "User-Agent": "Mozilla/5.0 (compatible; PodcastResearchBot/1.0)"
-        })
+        self.session: Optional[aiohttp.ClientSession] = None
 
-    def find_contacts(
+        # Patterns for identifying contact types
+        self.booking_patterns = [
+            r'booking', r'guest', r'podcast', r'media',
+            r'inquir', r'press', r'interview'
+        ]
+        self.host_patterns = [
+            r'@gmail\.com', r'@yahoo\.com', r'@outlook\.com',
+            r'@icloud\.com', r'@me\.com'
+        ]
+
+    async def __aenter__(self):
+        self.session = aiohttp.ClientSession(
+            headers={"User-Agent": "PodcastOutreach/1.0"},
+            timeout=aiohttp.ClientTimeout(total=30)
+        )
+        return self
+
+    async def __aexit__(self, *args):
+        if self.session:
+            await self.session.close()
+
+    async def find_contacts(
         self,
-        website_url: str,
+        website_url: Optional[str] = None,
         podcast_name: str = "",
-    ) -> List[Contact]:
+        social_links: List[str] = None
+    ) -> Tuple[Optional[ContactResult], Optional[ContactResult]]:
         """
-        Find contact information from a website
+        Find primary and backup contacts.
 
-        Args:
-            website_url: The podcast's website URL
-            podcast_name: Name of the podcast (for context)
-
-        Returns:
-            List of discovered contacts
+        Returns: (primary_contact, backup_contact)
+        Both will have source_url populated, or be None.
         """
+        all_contacts = []
+
+        # 1. Check podcast website
+        if website_url:
+            website_contacts = await self._scan_website(website_url)
+            all_contacts.extend(website_contacts)
+
+        # 2. Check common podcast directories
+        directory_contacts = await self._check_directories(podcast_name)
+        all_contacts.extend(directory_contacts)
+
+        # 3. Rank and dedupe contacts
+        ranked = self._rank_contacts(all_contacts)
+
+        # Return top 2
+        primary = ranked[0] if len(ranked) > 0 else None
+        backup = ranked[1] if len(ranked) > 1 else None
+
+        return primary, backup
+
+    async def _scan_website(self, base_url: str) -> List[ContactResult]:
+        """Scan podcast website for contact emails"""
         contacts = []
-        emails_found: Set[str] = set()
 
-        try:
-            # Fetch main page
-            main_page_emails = self._scrape_page(website_url)
-            emails_found.update(main_page_emails)
+        # Pages to check (in priority order)
+        paths_to_check = [
+            "/contact",
+            "/contact-us",
+            "/be-a-guest",
+            "/guest",
+            "/podcast",
+            "/about",
+            "/media",
+            "/press",
+            "/booking",
+            "",  # Homepage
+        ]
 
-            # Try common contact page URLs
-            contact_urls = self._find_contact_pages(website_url)
-            for url in contact_urls:
-                page_emails = self._scrape_page(url)
-                emails_found.update(page_emails)
-
-            # Try about page
-            about_urls = self._find_about_pages(website_url)
-            for url in about_urls:
-                page_emails = self._scrape_page(url)
-                emails_found.update(page_emails)
-
-        except Exception as e:
-            print(f"Error scraping {website_url}: {e}")
-
-        # Convert to Contact objects
-        for email in emails_found:
-            if self._is_valid_contact_email(email):
-                confidence = self._calculate_confidence(email, podcast_name)
-                contacts.append(Contact(
-                    email=email.lower(),
-                    source="website",
-                    confidence=confidence,
-                ))
-
-        # Sort by confidence
-        contacts.sort(key=lambda c: c.confidence, reverse=True)
+        for path in paths_to_check:
+            url = f"{base_url.rstrip('/')}{path}"
+            page_contacts = await self._scrape_page_for_emails(url)
+            contacts.extend(page_contacts)
 
         return contacts
 
-    def _scrape_page(self, url: str) -> Set[str]:
-        """Scrape a page for email addresses"""
-        emails = set()
+    async def _scrape_page_for_emails(self, url: str) -> List[ContactResult]:
+        """Scrape a single page for emails"""
+        contacts = []
 
         try:
-            response = self.session.get(url, timeout=10)
-            response.raise_for_status()
+            async with self.session.get(url) as resp:
+                if resp.status != 200:
+                    return contacts
 
-            soup = BeautifulSoup(response.text, "html.parser")
+                html = await resp.text()
+                soup = BeautifulSoup(html, 'html.parser')
 
-            # Find mailto links
-            for link in soup.find_all("a", href=True):
-                href = link.get("href", "")
-                if href.startswith("mailto:"):
-                    email = href.replace("mailto:", "").split("?")[0]
-                    emails.add(email)
+                # Method 1: mailto: links (highest confidence)
+                mailto_links = soup.find_all('a', href=re.compile(r'^mailto:', re.I))
+                for link in mailto_links:
+                    href = link.get('href', '')
+                    email = href.replace('mailto:', '').split('?')[0].strip()
 
-            # Search page text for email patterns
-            text = soup.get_text()
-            found = self.EMAIL_PATTERN.findall(text)
-            emails.update(found)
+                    if self._is_valid_email(email):
+                        contact_type = self._classify_email(email, link.get_text())
+                        contacts.append(ContactResult(
+                            email=email.lower(),
+                            source_url=url,
+                            contact_type=contact_type,
+                            confidence=0.9 if contact_type == "booking" else 0.7
+                        ))
 
-            # Check meta tags and structured data
-            for meta in soup.find_all("meta"):
-                content = meta.get("content", "")
-                found = self.EMAIL_PATTERN.findall(content)
-                emails.update(found)
+                # Method 2: Email patterns in text (lower confidence)
+                email_pattern = re.compile(
+                    r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}\b'
+                )
+                text_emails = email_pattern.findall(html)
+
+                for email in text_emails:
+                    if self._is_valid_email(email):
+                        # Check if already found via mailto
+                        if not any(c.email == email.lower() for c in contacts):
+                            contact_type = self._classify_email(email, "")
+                            contacts.append(ContactResult(
+                                email=email.lower(),
+                                source_url=url,
+                                contact_type=contact_type,
+                                confidence=0.6
+                            ))
 
         except Exception as e:
-            print(f"Error fetching {url}: {e}")
+            logger.warning(f"Error scraping {url}: {e}")
 
-        return emails
+        return contacts
 
-    def _find_contact_pages(self, base_url: str) -> List[str]:
-        """Find potential contact page URLs"""
-        paths = [
-            "/contact", "/contact-us", "/contact.html",
-            "/get-in-touch", "/reach-out", "/connect",
-            "/booking", "/book", "/guest", "/be-a-guest",
-            "/pitch", "/sponsor", "/advertise",
+    async def _check_directories(self, podcast_name: str) -> List[ContactResult]:
+        """Check podcast directories for contact info"""
+        contacts = []
+
+        # Note: In production, you'd implement actual directory checks
+        # This is a placeholder for the structure
+        directories = [
+            ("podchaser", f"https://www.podchaser.com/search?q={podcast_name}"),
+            ("chartable", f"https://chartable.com/search?q={podcast_name}"),
         ]
 
-        parsed = urlparse(base_url)
-        base = f"{parsed.scheme}://{parsed.netloc}"
+        # Implement directory-specific scrapers as needed
 
-        return [urljoin(base, path) for path in paths]
+        return contacts
 
-    def _find_about_pages(self, base_url: str) -> List[str]:
-        """Find potential about page URLs"""
-        paths = [
-            "/about", "/about-us", "/about.html",
-            "/team", "/host", "/hosts", "/who-we-are",
-        ]
-
-        parsed = urlparse(base_url)
-        base = f"{parsed.scheme}://{parsed.netloc}"
-
-        return [urljoin(base, path) for path in paths]
-
-    def _is_valid_contact_email(self, email: str) -> bool:
-        """Check if an email is a valid contact (not generic/system email)"""
-        email_lower = email.lower()
-
-        # Check excluded domains
-        domain = email_lower.split("@")[-1]
-        if domain in self.EXCLUDED_DOMAINS:
+    def _is_valid_email(self, email: str) -> bool:
+        """Validate email format and filter out spam traps"""
+        if not email or '@' not in email:
             return False
 
-        # Check excluded prefixes
-        local_part = email_lower.split("@")[0]
-        for prefix in self.EXCLUDED_PREFIXES:
-            if local_part.startswith(prefix) or email_lower.startswith(prefix):
+        email_lower = email.lower()
+
+        # Skip patterns
+        skip_patterns = [
+            'noreply', 'no-reply', 'donotreply', 'mailer-daemon',
+            'example.com', 'example.org', 'test.com',
+            '.png', '.jpg', '.gif', '.svg',  # False positives
+            'wixpress', 'sentry.io', 'cloudflare',  # Infrastructure
+            'privacy@', 'abuse@', 'postmaster@', 'webmaster@',
+        ]
+
+        for pattern in skip_patterns:
+            if pattern in email_lower:
                 return False
+
+        # Basic format check
+        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email):
+            return False
 
         return True
 
-    def _calculate_confidence(self, email: str, podcast_name: str) -> float:
-        """Calculate confidence score for an email being the right contact"""
-        score = 0.5
+    def _classify_email(self, email: str, context: str) -> str:
+        """Classify email as booking, host, producer, or general"""
+        combined = f"{email} {context}".lower()
 
-        email_lower = email.lower()
-        podcast_lower = podcast_name.lower() if podcast_name else ""
+        # Check for booking/guest patterns (highest priority)
+        for pattern in self.booking_patterns:
+            if re.search(pattern, combined):
+                return "booking"
 
-        # Boost if email contains podcast name
-        podcast_words = podcast_lower.split()
-        for word in podcast_words:
-            if len(word) > 3 and word in email_lower:
-                score += 0.1
+        # Check for personal email patterns (host)
+        for pattern in self.host_patterns:
+            if re.search(pattern, email.lower()):
+                return "host"
 
-        # Boost personal-looking emails
-        if re.match(r"^[a-z]+\.[a-z]+@", email_lower):
-            score += 0.15  # firstname.lastname pattern
-        elif re.match(r"^[a-z]+@", email_lower):
-            score += 0.1  # just firstname
+        # Check context for producer signals
+        if 'producer' in combined or 'production' in combined:
+            return "producer"
 
-        # Reduce for generic-looking domains
-        domain = email_lower.split("@")[-1]
-        if domain in ["gmail.com", "yahoo.com", "hotmail.com", "outlook.com"]:
-            score -= 0.05
+        return "general"
 
-        # Boost for podcast-specific keywords
-        if any(kw in email_lower for kw in ["podcast", "show", "booking", "guest"]):
-            score += 0.1
+    def _rank_contacts(self, contacts: List[ContactResult]) -> List[ContactResult]:
+        """Rank and dedupe contacts, returning best options"""
+        # Remove duplicates (keep highest confidence)
+        seen = {}
+        for contact in contacts:
+            if contact.email not in seen or contact.confidence > seen[contact.email].confidence:
+                seen[contact.email] = contact
 
-        return min(1.0, max(0.0, score))
+        unique = list(seen.values())
 
-    def find_social_profiles(
-        self,
-        website_url: str,
-    ) -> dict:
-        """Find social media profile links from a website"""
-        profiles = {
-            "twitter": None,
-            "linkedin": None,
-            "instagram": None,
-            "facebook": None,
+        # Sort by: contact_type priority, then confidence
+        type_priority = {
+            "booking": 0,
+            "host": 1,
+            "producer": 2,
+            "general": 3
         }
 
-        try:
-            response = self.session.get(website_url, timeout=10)
-            soup = BeautifulSoup(response.text, "html.parser")
+        unique.sort(key=lambda c: (
+            type_priority.get(c.contact_type, 99),
+            -c.confidence
+        ))
 
-            for link in soup.find_all("a", href=True):
-                href = link.get("href", "").lower()
-
-                if "twitter.com/" in href or "x.com/" in href:
-                    profiles["twitter"] = href
-                elif "linkedin.com/" in href:
-                    profiles["linkedin"] = href
-                elif "instagram.com/" in href:
-                    profiles["instagram"] = href
-                elif "facebook.com/" in href:
-                    profiles["facebook"] = href
-
-        except Exception as e:
-            print(f"Error finding social profiles: {e}")
-
-        return profiles
+        return unique
 
 
-def main():
-    """CLI entry point"""
-    import argparse
-    import json
-
-    parser = argparse.ArgumentParser(description="Find podcast contact information")
-    parser.add_argument("url", help="Website URL to search")
-    parser.add_argument("--name", help="Podcast name")
-    parser.add_argument("--output", "-o", help="Output JSON file")
-
-    args = parser.parse_args()
-
+async def main():
+    """Example usage"""
     finder = ContactFinder()
-    contacts = finder.find_contacts(args.url, args.name or "")
-    social = finder.find_social_profiles(args.url)
 
-    output = {
-        "contacts": [
-            {
-                "email": c.email,
-                "name": c.name,
-                "role": c.role,
-                "source": c.source,
-                "confidence": c.confidence,
-            }
-            for c in contacts
-        ],
-        "social_profiles": social,
-    }
+    async with finder:
+        primary, backup = await finder.find_contacts(
+            website_url="https://www.smartpassiveincome.com",
+            podcast_name="Smart Passive Income"
+        )
 
-    if args.output:
-        with open(args.output, "w") as f:
-            json.dump(output, f, indent=2)
-        print(f"Saved results to {args.output}")
-    else:
-        print(json.dumps(output, indent=2))
+        if primary:
+            print(f"Primary: {primary.email}")
+            print(f"Source: {primary.source_url}")
+            print(f"Type: {primary.contact_type}")
+
+        if backup:
+            print(f"\nBackup: {backup.email}")
+            print(f"Source: {backup.source_url}")
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
