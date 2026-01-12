@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
       {
         title: angleLabel,
         hook: podcast.tier2Anchor || `Your show's focus on ${angleLabel.toLowerCase()}`,
-        talkingPoints: joeyProfile?.connectionHooks || JOEY_PROFILE_DEFAULT.connectionHooks,
+        talkingPoints: [...(joeyProfile?.connectionHooks || JOEY_PROFILE_DEFAULT.connectionHooks)],
       },
       guestProfile,
       leadMagnet?.ctaSnippet
