@@ -14,42 +14,100 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Plus, Loader2, ExternalLink, Check, Users, Folder } from "lucide-react";
+import { Search, Plus, Loader2, ExternalLink, Check, Users, Folder, AlertCircle, X } from "lucide-react";
 import type { DiscoveryResult } from "@/types";
 
 type SearchType = "seed_guest" | "category";
 
+interface ResultWithStatus extends DiscoveryResult {
+  imported?: boolean;
+  error?: string;
+  importing?: boolean;
+}
+
 export default function DiscoveryPage() {
   const [query, setQuery] = useState("");
   const [searchType, setSearchType] = useState<SearchType>("category");
-  const [results, setResults] = useState<Array<DiscoveryResult & { imported?: boolean }>>([]);
+  const [results, setResults] = useState<ResultWithStatus[]>([]);
+  const [notification, setNotification] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   const discovery = useDiscovery();
   const importPodcast = useImportPodcast();
 
+  const showNotification = (type: "success" | "error", message: string) => {
+    setNotification({ type, message });
+    setTimeout(() => setNotification(null), 5000);
+  };
+
   const handleSearch = async () => {
     if (!query) return;
 
-    const data = await discovery.mutateAsync({
-      type: searchType,
-      query,
-      limit: 20,
-    });
+    try {
+      const data = await discovery.mutateAsync({
+        type: searchType,
+        query,
+        limit: 20,
+      });
 
-    setResults(data.results.map((r) => ({ ...r, imported: false })));
+      setResults(data.results.map((r) => ({ ...r, imported: false })));
+    } catch (error) {
+      showNotification("error", error instanceof Error ? error.message : "Search failed");
+    }
   };
 
   const handleImport = async (podcast: DiscoveryResult) => {
-    await importPodcast.mutateAsync(podcast);
+    // Mark as importing
     setResults((prev) =>
       prev.map((p) =>
-        p.dedupeKey === podcast.dedupeKey ? { ...p, imported: true } : p
+        p.dedupeKey === podcast.dedupeKey ? { ...p, importing: true, error: undefined } : p
       )
     );
+
+    try {
+      await importPodcast.mutateAsync(podcast);
+      setResults((prev) =>
+        prev.map((p) =>
+          p.dedupeKey === podcast.dedupeKey ? { ...p, imported: true, importing: false } : p
+        )
+      );
+      showNotification("success", `Added "${podcast.showName}" to pipeline`);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to add podcast";
+      setResults((prev) =>
+        prev.map((p) =>
+          p.dedupeKey === podcast.dedupeKey ? { ...p, error: errorMessage, importing: false } : p
+        )
+      );
+      showNotification("error", errorMessage);
+    }
   };
 
   return (
     <div className="space-y-6">
+      {/* Notification Toast */}
+      {notification && (
+        <div
+          className={`fixed top-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-lg shadow-lg ${
+            notification.type === "success"
+              ? "bg-green-50 text-green-800 border border-green-200"
+              : "bg-red-50 text-red-800 border border-red-200"
+          }`}
+        >
+          {notification.type === "success" ? (
+            <Check className="h-4 w-4" />
+          ) : (
+            <AlertCircle className="h-4 w-4" />
+          )}
+          <span className="text-sm">{notification.message}</span>
+          <button
+            onClick={() => setNotification(null)}
+            className="ml-2 hover:opacity-70"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Discovery</h1>
@@ -204,13 +262,24 @@ export default function DiscoveryPage() {
                   )}
                   <Button
                     size="sm"
-                    disabled={podcast.imported || importPodcast.isPending}
+                    disabled={podcast.imported || podcast.importing}
+                    variant={podcast.error ? "destructive" : "default"}
                     onClick={() => handleImport(podcast)}
                   >
-                    {podcast.imported ? (
+                    {podcast.importing ? (
+                      <>
+                        <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                        Adding...
+                      </>
+                    ) : podcast.imported ? (
                       <>
                         <Check className="h-3 w-3 mr-1" />
                         Added
+                      </>
+                    ) : podcast.error ? (
+                      <>
+                        <AlertCircle className="h-3 w-3 mr-1" />
+                        Retry
                       </>
                     ) : (
                       <>

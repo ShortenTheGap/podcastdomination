@@ -85,12 +85,39 @@ export function useImportPodcast() {
 
   return useMutation<Podcast, Error, DiscoveryResult>({
     mutationFn: async (podcast) => {
+      // Map DiscoveryResult to API-compatible format (exclude extra fields like dedupeKey, riskSignals)
+      const payload = {
+        showName: podcast.showName,
+        hostName: podcast.hostName,
+        showDescription: podcast.showDescription,
+        primaryPlatformUrl: podcast.primaryPlatformUrl,
+        applePodcastUrl: podcast.applePodcastUrl,
+        websiteUrl: podcast.websiteUrl,
+        spotifyUrl: podcast.spotifyUrl,
+        recentEpisodeTitles: podcast.recentEpisodeTitles || [],
+        recentGuests: podcast.recentGuests || [],
+        primaryEmail: podcast.primaryEmail,
+        primaryEmailSourceUrl: podcast.primaryEmailSourceUrl,
+        backupEmail: podcast.backupEmail,
+        backupEmailSourceUrl: podcast.backupEmailSourceUrl,
+        discoverySource: podcast.discoverySource,
+        discoveryBatch: new Date().toISOString().slice(0, 7),
+      };
+
       const res = await fetch("/api/podcasts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(podcast),
+        body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error("Failed to import podcast");
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        if (res.status === 409) {
+          throw new Error("This podcast is already in your pipeline");
+        }
+        throw new Error(errorData.error || "Failed to import podcast");
+      }
+
       return res.json();
     },
     onSuccess: () => {
