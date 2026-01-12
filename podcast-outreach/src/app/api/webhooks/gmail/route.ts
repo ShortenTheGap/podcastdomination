@@ -18,12 +18,10 @@ export async function POST(request: NextRequest) {
     console.log("Gmail webhook received:", { historyId, emailAddress });
 
     // Find touches that have been sent but not yet marked as replied
-    // We track replies by looking at touches that have Gmail thread context
     const sentTouches = await db.touch.findMany({
       where: {
         replied: false,
         bounced: false,
-        sentAt: { not: null },
       },
       include: {
         podcast: true,
