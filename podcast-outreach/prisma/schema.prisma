@@ -7,186 +7,274 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Podcast discovered from various sources
+// ============================================
+// CORE ENTITIES
+// ============================================
+
 model Podcast {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  website     String?
-  rssFeed     String?
-  appleId     String?  @unique
-  spotifyId   String?  @unique
-  youtubeId   String?  @unique
+  id                    String    @id @default(cuid())
+  dedupeKey             String    @unique // apple:123456 or web:domain.com|showname
 
-  // Metadata
-  category    String?
-  subcategory String?
-  language    String   @default("en")
-  episodeCount Int     @default(0)
-  avgEpisodeLength Int? // in minutes
+  // Basic Info
+  showName              String
+  hostName              String?
+  showDescription       String?   @db.Text
+  websiteUrl            String?
+  applePodcastUrl       String?
+  spotifyUrl            String?
+  primaryPlatformUrl    String
 
-  // Audience metrics
-  listenerCount   Int?
-  rating          Float?
-  reviewCount     Int?
+  // Contact Info (with source verification)
+  primaryEmail          String?
+  primaryEmailSourceUrl String?   // REQUIRED if primaryEmail exists
+  backupEmail           String?
+  backupEmailSourceUrl  String?   // REQUIRED if backupEmail exists
 
-  // Discovery info
-  source          String   // where we found it (apple, spotify, manual, etc)
-  discoveredAt    DateTime @default(now())
-  lastScrapedAt   DateTime?
+  // Evidence & Tiering
+  tier                  Tier      @default(PENDING)
+  tier2Anchor           String?   // General statement about show focus
+  tier2EvidenceUrl      String?   // Public evidence supporting anchor
+  tier1AddOnLine        String?   // Optional strong connection from transcript
+  tier1TranscriptUrl    String?   // Source transcript URL
+
+  // Evidence Collection
+  evidenceNotes         String?   @db.Text
+  recentEpisodeTitles   String[]  // Last 10 episode titles
+  recentGuests          String[]  // Verifiable guests
+  transcriptContent     String?   @db.Text // Raw transcript text (for analysis)
+
+  // Stop Rules
+  stopRule              StopRule  @default(NONE)
+  suppressed            Boolean   @default(false)
+  suppressedAt          DateTime?
+  suppressionEvidence   String?   @db.Text
+
+  // Outreach Status
+  status                OutreachStatus @default(NOT_CONTACTED)
+
+  // Email Draft
+  emailDraft            String?   @db.Text
+  emailSubject          String?
+  selectedAngle         Angle?
+  selectedLeadMagnet    String?
+
+  // QA
+  qaStatus              QAStatus  @default(NOT_READY)
+  qaChecklist           Json?     // { nameCorrect: true, noListeningClaim: true, ... }
+  qaApprovedAt          DateTime?
+  qaApprovedBy          String?
+
+  // Tracking Dates
+  sentPrimaryAt         DateTime?
+  followUpSentAt        DateTime?
+  sentBackupAt          DateTime?
+  replyReceivedAt       DateTime?
+  replyType             ReplyType?
+
+  // Calculated Fields
+  nextAction            NextAction?
+  nextActionDate        DateTime?
+  outcome               Outcome   @default(OPEN)
+
+  // Discovery Metadata
+  discoverySource       String?   // "seed:guest_name" or "category:fitness"
+  discoveryBatch        String?   // "2026-01"
+  isNew                 Boolean   @default(true)
+
+  // Timestamps
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   // Relations
-  contacts    Contact[]
-  episodes    Episode[]
-  outreach    Outreach[]
-  angles      Angle[]
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  touches               Touch[]
+  notes                 Note[]
 }
 
-// Individual episodes for transcript analysis
-model Episode {
-  id          String   @id @default(cuid())
+model Touch {
+  id          String    @id @default(cuid())
   podcastId   String
-  podcast     Podcast  @relation(fields: [podcastId], references: [id], onDelete: Cascade)
+  podcast     Podcast   @relation(fields: [podcastId], references: [id], onDelete: Cascade)
 
-  title       String
-  description String?
-  publishedAt DateTime?
-  duration    Int?     // in seconds
-  audioUrl    String?
-  youtubeUrl  String?
+  type        TouchType
+  contactUsed String    // Which email was used
+  sentAt      DateTime
+  emailBody   String    @db.Text
+  emailSubject String
 
-  // Transcript
-  transcript     String?  @db.Text
-  transcriptSource String? // youtube, whisper, manual
-
-  // AI analysis
-  topics      String?  // JSON array of topics
-  guestName   String?
-  guestTitle  String?
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([podcastId])
-}
-
-// Contact information for podcast hosts/producers
-model Contact {
-  id          String   @id @default(cuid())
-  podcastId   String
-  podcast     Podcast  @relation(fields: [podcastId], references: [id], onDelete: Cascade)
-
-  name        String
-  email       String?
-  role        String   @default("host") // host, producer, booking
-
-  // Social profiles
-  linkedinUrl String?
-  twitterUrl  String?
-
-  // Verification
-  emailVerified Boolean @default(false)
-  emailSource   String? // where we found it
-
-  outreach    Outreach[]
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([podcastId])
-  @@index([email])
-}
-
-// AI-generated pitch angles
-model Angle {
-  id          String   @id @default(cuid())
-  podcastId   String
-  podcast     Podcast  @relation(fields: [podcastId], references: [id], onDelete: Cascade)
-
-  title       String
-  description String
-  hook        String   // Opening hook for email
-  talkingPoints String // JSON array
-
-  // Scoring
-  relevanceScore Float  @default(0)
-  approved       Boolean @default(false)
-
-  outreach    Outreach[]
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([podcastId])
-}
-
-// Outreach tracking (the pipeline)
-model Outreach {
-  id          String   @id @default(cuid())
-  podcastId   String
-  podcast     Podcast  @relation(fields: [podcastId], references: [id], onDelete: Cascade)
-  contactId   String?
-  contact     Contact? @relation(fields: [contactId], references: [id])
-  angleId     String?
-  angle       Angle?   @relation(fields: [angleId], references: [id])
-
-  // Pipeline status
-  status      String   @default("discovered") // discovered, researched, drafted, review, sent, replied, booked, rejected
-  priority    Int      @default(0) // higher = more important
-
-  // Email content
-  subject     String?
-  body        String?  @db.Text
-
-  // Tracking
-  sentAt      DateTime?
+  // Response tracking
+  opened      Boolean   @default(false)
   openedAt    DateTime?
+  replied     Boolean   @default(false)
   repliedAt   DateTime?
-  bookedAt    DateTime?
+  bounced     Boolean   @default(false)
+  bouncedAt   DateTime?
 
-  // Gmail integration
-  gmailThreadId  String?
-  gmailMessageId String?
-
-  // Follow-up
-  followUpCount  Int      @default(0)
-  lastFollowUpAt DateTime?
-  nextFollowUpAt DateTime?
-
-  // Notes
-  notes       String?
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
 
   @@index([podcastId])
-  @@index([status])
-  @@index([contactId])
 }
 
-// User settings and configuration
-model Settings {
-  id          String   @id @default(cuid())
-  key         String   @unique
-  value       String   // JSON value
+model Note {
+  id          String    @id @default(cuid())
+  podcastId   String
+  podcast     Podcast   @relation(fields: [podcastId], references: [id], onDelete: Cascade)
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  content     String    @db.Text
+  author      String    @default("system")
+
+  createdAt   DateTime  @default(now())
+
+  @@index([podcastId])
 }
 
-// Email templates
-model EmailTemplate {
-  id          String   @id @default(cuid())
+// ============================================
+// CONFIGURATION ENTITIES
+// ============================================
+
+model SeedGuest {
+  id          String    @id @default(cuid())
   name        String
-  subject     String
-  body        String   @db.Text
-  type        String   @default("initial") // initial, followup1, followup2, etc
+  category    SeedCategory
+  notes       String?   @db.Text
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+}
 
-  isDefault   Boolean  @default(false)
+model LeadMagnet {
+  id          String    @id @default(cuid())
+  name        String
+  description String    @db.Text
+  url         String
+  matchAngles Angle[]   // Which angles this pairs best with
+  ctaSnippet  String    @db.Text // Copy-paste CTA for emails
+  isDefault   Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+}
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+model JoeyProfile {
+  id                    String    @id @default(cuid())
+  positioningStatements String[]
+  credibilityAssets     String[]  // "PhD", "Results", etc.
+  anglePillars          Angle[]
+  allowedTopics         String[]
+  noGoTopics            String[]
+  personalTraits        String[]  // "dad", "Cuban immigrant", etc.
+  connectionHooks       String[]  // Safe things to reference
+  safeConnectionStatements String[] // Pre-approved connection lines
+  updatedAt             DateTime  @updatedAt
+}
+
+model SystemConfig {
+  id                    String    @id @default(cuid())
+
+  // Sending Rules
+  dailySendCap          Int       @default(10)
+  followUpWindowDays    Int       @default(7)
+  maxFollowUps          Int       @default(1)
+  maxBackupAttempts     Int       @default(1)
+
+  // Discovery Rules
+  transcriptEpisodeScope Int      @default(3)  // Check last N episodes
+
+  updatedAt             DateTime  @updatedAt
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum Tier {
+  PENDING
+  TIER_1      // Strong - transcript evidence
+  TIER_2      // Baseline - metadata sufficient
+  TIER_3      // Insufficient evidence - no send
+}
+
+enum StopRule {
+  NONE
+  POLITICS
+  EXPLICIT
+  PAID_GUEST
+  FRAUD_PSEUDOSCIENCE
+  NO_GUESTS
+  TIER_3_INSUFFICIENT
+  NO_CONTACT_ROUTE
+  BOUNCE
+  OPT_OUT
+  SPAM_COMPLAINT
+}
+
+enum OutreachStatus {
+  NOT_CONTACTED
+  READY_TO_DRAFT
+  DRAFTED
+  QA_APPROVED
+  SENT
+  FOLLOW_UP_DUE
+  FOLLOW_UP_SENT
+  ESCALATION_DUE
+  ESCALATED
+  REPLIED
+  CLOSED
+}
+
+enum QAStatus {
+  NOT_READY
+  PENDING_REVIEW
+  PASS
+  NEEDS_REVISION
+}
+
+enum NextAction {
+  DRAFT
+  QA
+  SEND
+  FOLLOW_UP
+  ESCALATE
+  CLOSE
+  NONE
+}
+
+enum Outcome {
+  OPEN
+  BOOKED
+  DECLINED
+  NO_RESPONSE
+  SUPPRESSED
+  BOUNCED
+  OPT_OUT
+}
+
+enum ReplyType {
+  POSITIVE
+  NEUTRAL
+  NEGATIVE
+  NOT_NOW
+  NEEDS_TOPICS
+  NEEDS_MEDIA_KIT
+  PAID_ONLY
+}
+
+enum Angle {
+  FAT_LOSS
+  GENERAL_HEALTH
+  LONGEVITY
+  DADS_PARENTING
+  CEO_PERFORMANCE
+  PERSONAL_DEVELOPMENT
+  EVIDENCE_BASED_NUTRITION
+  BODY_RECOMPOSITION
+}
+
+enum TouchType {
+  PRIMARY
+  FOLLOW_UP
+  BACKUP
+}
+
+enum SeedCategory {
+  FITNESS_FAT_LOSS
+  GENERAL_HEALTH_LONGEVITY
+  ENTREPRENEUR_CEO
+  DAD_PARENTING
 }
