@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -59,7 +59,7 @@ model Episode {
   youtubeUrl  String?
 
   // Transcript
-  transcript     String?
+  transcript     String?  @db.Text
   transcriptSource String? // youtube, whisper, manual
 
   // AI analysis
@@ -139,7 +139,7 @@ model Outreach {
 
   // Email content
   subject     String?
-  body        String?
+  body        String?  @db.Text
 
   // Tracking
   sentAt      DateTime?
@@ -182,7 +182,7 @@ model EmailTemplate {
   id          String   @id @default(cuid())
   name        String
   subject     String
-  body        String
+  body        String   @db.Text
   type        String   @default("initial") // initial, followup1, followup2, etc
 
   isDefault   Boolean  @default(false)
