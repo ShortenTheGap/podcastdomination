@@ -128,20 +128,20 @@ export default function PipelinePage() {
 function PipelineTable({ podcasts }: { podcasts: any[] }) {
   return (
     <table className="w-full">
-      <thead className="bg-muted/50 sticky top-0">
+      <thead className="bg-slate-100 sticky top-0">
         <tr>
-          <th className="text-left px-4 py-3 text-sm font-medium">Show</th>
-          <th className="text-left px-4 py-3 text-sm font-medium">Tier</th>
-          <th className="text-left px-4 py-3 text-sm font-medium">Status</th>
-          <th className="text-left px-4 py-3 text-sm font-medium">
+          <th className="text-left px-4 py-3 text-sm font-medium text-slate-700">Show</th>
+          <th className="text-left px-4 py-3 text-sm font-medium text-slate-700">Tier</th>
+          <th className="text-left px-4 py-3 text-sm font-medium text-slate-700">Status</th>
+          <th className="text-left px-4 py-3 text-sm font-medium text-slate-700">
             Next Action
           </th>
-          <th className="text-left px-4 py-3 text-sm font-medium">Contact</th>
-          <th className="text-left px-4 py-3 text-sm font-medium">Outcome</th>
+          <th className="text-left px-4 py-3 text-sm font-medium text-slate-700">Contact</th>
+          <th className="text-left px-4 py-3 text-sm font-medium text-slate-700">Outcome</th>
           <th className="w-12"></th>
         </tr>
       </thead>
-      <tbody className="divide-y">
+      <tbody className="divide-y divide-slate-200">
         {podcasts.map((podcast) => (
           <PodcastRow key={podcast.id} podcast={podcast} />
         ))}
@@ -167,11 +167,11 @@ function PodcastRow({ podcast }: { podcast: any }) {
   };
 
   return (
-    <tr className="hover:bg-muted/30">
+    <tr className="hover:bg-slate-50">
       <td className="px-4 py-3">
         <div>
-          <p className="font-medium">{podcast.showName}</p>
-          <p className="text-sm text-muted-foreground">
+          <p className="font-medium text-slate-900">{podcast.showName}</p>
+          <p className="text-sm text-slate-500">
             {podcast.hostName || "Unknown host"}
           </p>
         </div>
@@ -182,25 +182,27 @@ function PodcastRow({ podcast }: { podcast: any }) {
       <td className="px-4 py-3">
         <div className="flex items-center gap-2">
           {getStatusIcon(podcast.status)}
-          <span className="text-sm">{formatStatus(podcast.status)}</span>
+          <span className="text-sm text-slate-700">{formatStatus(podcast.status)}</span>
         </div>
       </td>
       <td className="px-4 py-3">
-        {podcast.nextAction && podcast.nextAction !== "NONE" && (
+        {podcast.nextAction && podcast.nextAction !== "NONE" ? (
           <div>
-            <p className="text-sm font-medium">
+            <p className="text-sm font-medium text-slate-700">
               {formatAction(podcast.nextAction)}
             </p>
             {podcast.nextActionDate && (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-slate-500">
                 {new Date(podcast.nextActionDate).toLocaleDateString()}
               </p>
             )}
           </div>
+        ) : (
+          <span className="text-slate-400">—</span>
         )}
       </td>
       <td className="px-4 py-3">
-        <p className="text-sm truncate max-w-[200px]">
+        <p className="text-sm text-slate-700 truncate max-w-[200px]">
           {podcast.primaryEmail || "—"}
         </p>
       </td>
@@ -208,8 +210,8 @@ function PodcastRow({ podcast }: { podcast: any }) {
         <OutcomeBadge outcome={podcast.outcome} />
       </td>
       <td className="px-4 py-3">
-        <button className="p-1 hover:bg-muted rounded">
-          <MoreHorizontal className="h-4 w-4" />
+        <button className="p-1 hover:bg-slate-200 rounded">
+          <MoreHorizontal className="h-4 w-4 text-slate-500" />
         </button>
       </td>
     </tr>
