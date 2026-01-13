@@ -81,20 +81,20 @@ export async function GET(request: NextRequest) {
 // POST /api/podcasts - Create new podcast
 const CreateSchema = z.object({
   showName: z.string().min(1),
-  hostName: z.string().optional(),
+  hostName: z.string().optional().nullable(),
   primaryPlatformUrl: z.string().url(),
   websiteUrl: z.string().url().optional().nullable(),
   applePodcastUrl: z.string().url().optional().nullable(),
   spotifyUrl: z.string().url().optional().nullable(),
-  showDescription: z.string().optional(),
+  showDescription: z.string().optional().nullable(),
   primaryEmail: z.string().email().optional().nullable(),
   primaryEmailSourceUrl: z.string().url().optional().nullable(),
   backupEmail: z.string().email().optional().nullable(),
   backupEmailSourceUrl: z.string().url().optional().nullable(),
-  discoverySource: z.string().optional(),
-  discoveryBatch: z.string().optional(),
-  recentEpisodeTitles: z.array(z.string()).optional().default([]),
-  recentGuests: z.array(z.string()).optional().default([]),
+  discoverySource: z.string().optional().nullable(),
+  discoveryBatch: z.string().optional().nullable(),
+  recentEpisodeTitles: z.array(z.string()).optional().nullable().default([]),
+  recentGuests: z.array(z.string()).optional().nullable().default([]),
 });
 
 export async function POST(request: NextRequest) {

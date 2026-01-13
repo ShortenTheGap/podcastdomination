@@ -41,33 +41,40 @@ async function searchApplePodcasts(query: string, limit: number) {
 
     const data = await response.json();
 
-    return (data.results || []).map((item: ApplePodcastResult) => ({
-      showName: item.collectionName || "Unknown Show",
-      hostName: item.artistName || null,
-      showDescription: null, // iTunes search doesn't return description, need to fetch separately
-      primaryPlatformUrl: item.collectionViewUrl || "",
-      applePodcastUrl: item.collectionViewUrl || null,
-      websiteUrl: null,
-      spotifyUrl: null,
-      dedupeKey: `apple:${item.collectionId}`,
-      recentEpisodeTitles: [],
-      recentGuests: [],
-      primaryEmail: null,
-      primaryEmailSourceUrl: null,
-      backupEmail: null,
-      backupEmailSourceUrl: null,
-      discoverySource: `category:${query}`,
-      riskSignals: detectRiskSignals(item),
-      // Additional display fields
-      artworkUrl: item.artworkUrl600 || item.artworkUrl100 || null,
-      genre: item.primaryGenreName || null,
-      genres: item.genres || [],
-      episodeCount: item.trackCount || 0,
-      lastReleaseDate: item.releaseDate || null,
-      country: item.country || null,
-      contentRating: item.contentAdvisoryRating || null,
-      feedUrl: item.feedUrl || null,
-    }));
+    // Filter out results without valid URLs and map to our format
+    return (data.results || [])
+      .filter((item: ApplePodcastResult) =>
+        item.collectionViewUrl &&
+        item.collectionId &&
+        item.collectionName
+      )
+      .map((item: ApplePodcastResult) => ({
+        showName: item.collectionName,
+        hostName: item.artistName || null,
+        showDescription: null, // iTunes search doesn't return description
+        primaryPlatformUrl: item.collectionViewUrl,
+        applePodcastUrl: item.collectionViewUrl,
+        websiteUrl: null,
+        spotifyUrl: null,
+        dedupeKey: `apple:${item.collectionId}`,
+        recentEpisodeTitles: [],
+        recentGuests: [],
+        primaryEmail: null,
+        primaryEmailSourceUrl: null,
+        backupEmail: null,
+        backupEmailSourceUrl: null,
+        discoverySource: `category:${query}`,
+        riskSignals: detectRiskSignals(item),
+        // Additional display fields
+        artworkUrl: item.artworkUrl600 || item.artworkUrl100 || null,
+        genre: item.primaryGenreName || null,
+        genres: item.genres || [],
+        episodeCount: item.trackCount || 0,
+        lastReleaseDate: item.releaseDate || null,
+        country: item.country || null,
+        contentRating: item.contentAdvisoryRating || null,
+        feedUrl: item.feedUrl || null,
+      }));
   } catch (error) {
     console.error("Apple search error:", error);
     return [];
