@@ -34,19 +34,11 @@ function createPrismaClient(): any {
     console.warn("DATABASE_URL not set - database operations will fail");
   }
 
-  // Check if we're in a build environment without Prisma
+  // ALWAYS use mock during build - database is not available during Railway build
+  // Railway's internal network (postgres.railway.internal) only works at runtime
   if (process.env.NEXT_PHASE === "phase-production-build") {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { PrismaClient } = require("@prisma/client");
-      return new PrismaClient({
-        log: process.env.NODE_ENV === "development" ? ["query", "error", "warn"] : ["error"],
-      });
-    } catch (e) {
-      // Return mock during build if Prisma isn't ready
-      console.warn("Prisma client not available during build, using mock:", e);
-      return new MockPrismaClient();
-    }
+    console.log("Build phase detected - using mock Prisma client");
+    return new MockPrismaClient();
   }
 
   // Runtime: use real Prisma client with error handling
