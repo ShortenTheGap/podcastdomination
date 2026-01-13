@@ -1,17 +1,18 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 import {
   Send,
   Clock,
   CheckCircle,
-  XCircle,
   AlertTriangle,
   ChevronDown,
   Filter,
-  Search,
   MoreHorizontal,
+  Sparkles,
+  FileEdit,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -155,8 +156,18 @@ function PodcastRow({ podcast }: { podcast: any }) {
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
   const buttonRef = useRef<HTMLButtonElement>(null);
   const queryClient = useQueryClient();
+  const router = useRouter();
 
-  const handleMenuOpen = () => {
+  const handleRowClick = (e: React.MouseEvent) => {
+    // Don't navigate if clicking on the menu button or menu
+    if ((e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('.action-menu')) {
+      return;
+    }
+    router.push(`/podcast/${podcast.id}`);
+  };
+
+  const handleMenuOpen = (e: React.MouseEvent) => {
+    e.stopPropagation();
     if (buttonRef.current) {
       const rect = buttonRef.current.getBoundingClientRect();
       setMenuPosition({
@@ -204,13 +215,19 @@ function PodcastRow({ podcast }: { podcast: any }) {
       case "FOLLOW_UP_DUE":
       case "ESCALATION_DUE":
         return <Clock className="h-4 w-4 text-yellow-500" />;
+      case "READY_TO_DRAFT":
+        return <FileEdit className="h-4 w-4 text-blue-500" />;
+      case "DRAFTED":
+        return <FileEdit className="h-4 w-4 text-amber-500" />;
+      case "NOT_CONTACTED":
+        return <Sparkles className="h-4 w-4 text-slate-400" />;
       default:
         return <AlertTriangle className="h-4 w-4 text-gray-400" />;
     }
   };
 
   return (
-    <tr className="hover:bg-slate-50">
+    <tr className="hover:bg-slate-50 cursor-pointer" onClick={handleRowClick}>
       <td className="px-4 py-3">
         <div>
           <p className="font-medium text-slate-900">{podcast.showName}</p>

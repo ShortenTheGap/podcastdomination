@@ -81,6 +81,10 @@ model Podcast {
   discoveryBatch        String?   // "2026-01"
   isNew                 Boolean   @default(true)
 
+  // AI Analysis
+  pendingAnalysis       Json?     // Stores AI recommendation before user approval
+  analysisRunAt         DateTime? // When analysis was last run
+
   // Timestamps
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
