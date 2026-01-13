@@ -155,9 +155,23 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    // Log the full error for debugging
     console.error("Error creating podcast:", error);
+
+    // Return more specific error message
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    const isDatabaseError = errorMessage.includes("prisma") ||
+                           errorMessage.includes("database") ||
+                           errorMessage.includes("connect") ||
+                           errorMessage.includes("ECONNREFUSED");
+
     return NextResponse.json(
-      { error: "Failed to create podcast" },
+      {
+        error: isDatabaseError
+          ? "Database connection failed. Please check DATABASE_URL configuration."
+          : `Failed to create podcast: ${errorMessage}`,
+      },
       { status: 500 }
     );
   }

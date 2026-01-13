@@ -29,6 +29,11 @@ class MockPrismaClient {
 }
 
 function createPrismaClient(): any {
+  // Check if DATABASE_URL is set
+  if (!process.env.DATABASE_URL) {
+    console.warn("DATABASE_URL not set - database operations will fail");
+  }
+
   // Check if we're in a build environment without Prisma
   if (process.env.NEXT_PHASE === "phase-production-build") {
     try {
@@ -37,19 +42,27 @@ function createPrismaClient(): any {
       return new PrismaClient({
         log: process.env.NODE_ENV === "development" ? ["query", "error", "warn"] : ["error"],
       });
-    } catch {
+    } catch (e) {
       // Return mock during build if Prisma isn't ready
-      console.warn("Prisma client not available during build, using mock");
+      console.warn("Prisma client not available during build, using mock:", e);
       return new MockPrismaClient();
     }
   }
 
-  // Runtime: use real Prisma client
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { PrismaClient } = require("@prisma/client");
-  return new PrismaClient({
-    log: process.env.NODE_ENV === "development" ? ["query", "error", "warn"] : ["error"],
-  });
+  // Runtime: use real Prisma client with error handling
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { PrismaClient } = require("@prisma/client");
+    return new PrismaClient({
+      log: process.env.NODE_ENV === "development" ? ["query", "error", "warn"] : ["error"],
+    });
+  } catch (e) {
+    console.error("Failed to create Prisma client at runtime:", e);
+    // Throw a more helpful error
+    throw new Error(
+      `Database initialization failed. Make sure DATABASE_URL is set and prisma generate has been run. Original error: ${e instanceof Error ? e.message : e}`
+    );
+  }
 }
 
 const globalForPrisma = globalThis as unknown as {
