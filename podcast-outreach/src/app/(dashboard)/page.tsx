@@ -237,7 +237,7 @@ function PodcastRow({ podcast }: { podcast: any }) {
         </div>
       </td>
       <td className="px-4 py-3">
-        <TierBadge tier={podcast.tier} />
+        <TierBadge tier={podcast.tier} pendingAnalysis={podcast.pendingAnalysis} />
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-2">
@@ -337,7 +337,11 @@ function PodcastRow({ podcast }: { podcast: any }) {
   );
 }
 
-function TierBadge({ tier }: { tier: string }) {
+function TierBadge({ tier, pendingAnalysis }: { tier: string; pendingAnalysis?: any }) {
+  // If tier is PENDING and there's pending analysis, show the recommended tier with indicator
+  const displayTier = tier === "PENDING" && pendingAnalysis?.tier ? pendingAnalysis.tier : tier;
+  const isRecommendation = tier === "PENDING" && pendingAnalysis?.tier;
+
   const colors: Record<string, string> = {
     TIER_1: "bg-emerald-100 text-emerald-700",
     TIER_2: "bg-green-100 text-green-700",
@@ -349,10 +353,13 @@ function TierBadge({ tier }: { tier: string }) {
     <span
       className={cn(
         "px-2 py-0.5 rounded text-xs font-medium",
-        colors[tier] || colors.PENDING
+        colors[displayTier] || colors.PENDING,
+        isRecommendation && "border border-dashed border-current"
       )}
+      title={isRecommendation ? "AI Recommendation (pending approval)" : undefined}
     >
-      {tier.replace("_", " ")}
+      {displayTier.replace("_", " ")}
+      {isRecommendation && " *"}
     </span>
   );
 }
@@ -533,7 +540,7 @@ function PodcastCard({ podcast }: { podcast: any }) {
         {podcast.hostName || "Unknown host"}
       </p>
       <div className="flex items-center gap-2 mt-2">
-        <TierBadge tier={podcast.tier} />
+        <TierBadge tier={podcast.tier} pendingAnalysis={podcast.pendingAnalysis} />
         {podcast.nextAction && podcast.nextAction !== "NONE" && (
           <span className="text-xs text-slate-500">
             {formatAction(podcast.nextAction)}

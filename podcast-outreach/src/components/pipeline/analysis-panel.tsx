@@ -94,7 +94,7 @@ export function AnalysisPanel({ podcast }: { podcast: Podcast }) {
     },
   });
 
-  // Approve Tier 2 mutation
+  // Approve Tier 2 mutation (for when AI recommends TIER_2)
   const approveMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch(`/api/podcasts/${podcast.id}`, {
@@ -109,6 +109,28 @@ export function AnalysisPanel({ podcast }: { podcast: Podcast }) {
         }),
       });
       if (!res.ok) throw new Error("Failed to approve");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["podcast", podcast.id] });
+      queryClient.invalidateQueries({ queryKey: ["podcasts"] });
+    },
+  });
+
+  // Override mutation - approve as TIER_2 when AI recommended TIER_3
+  const overrideApproveMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/podcasts/${podcast.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workflowAction: "APPROVE_TIER_2",
+          tier: "TIER_2", // Explicitly set to TIER_2 when overriding
+          tier2Anchor: customAnchor || analysis?.tier2Anchor || "Show appears relevant to fitness/health audience",
+          selectedAngle: selectedAngle || analysis?.primaryAngle || "FAT_LOSS",
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to override");
       return res.json();
     },
     onSuccess: () => {
@@ -430,10 +452,13 @@ export function AnalysisPanel({ podcast }: { podcast: Podcast }) {
                 Skip This Podcast
               </button>
               <button
-                onClick={() => approveMutation.mutate()}
-                disabled={approveMutation.isPending}
-                className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50"
+                onClick={() => overrideApproveMutation.mutate()}
+                disabled={overrideApproveMutation.isPending}
+                className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 disabled:opacity-50"
               >
+                {overrideApproveMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin inline mr-2" />
+                ) : null}
                 Override: Approve Anyway
               </button>
             </>

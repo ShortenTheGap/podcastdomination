@@ -348,6 +348,21 @@ function DraftPanel({ podcast }: { podcast: any }) {
     },
   });
 
+  // Show message if podcast hasn't been analyzed/approved yet
+  if (podcast.tier === "PENDING" || podcast.status === "NOT_CONTACTED") {
+    return (
+      <div className="bg-white border border-slate-200 rounded-lg p-6 text-center">
+        <h3 className="text-lg font-semibold text-slate-900 mb-2">Analysis Required</h3>
+        <p className="text-slate-500 mb-4">
+          You need to run AI analysis and approve the tier before creating a draft.
+        </p>
+        <p className="text-sm text-slate-400">
+          Go to the "Analysis & Tiering" tab to get started.
+        </p>
+      </div>
+    );
+  }
+
   if (!podcast.emailDraft && podcast.status === "READY_TO_DRAFT") {
     return (
       <div className="bg-white border border-slate-200 rounded-lg p-6 text-center">
