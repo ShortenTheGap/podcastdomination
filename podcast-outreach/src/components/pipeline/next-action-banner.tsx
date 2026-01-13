@@ -112,6 +112,36 @@ const ACTION_CONFIG: Record<
   },
 };
 
+function generateDraftTemplate(podcast: Podcast) {
+  const hostName = podcast.hostName || "there";
+  const analysis = podcast.pendingAnalysis;
+  const anchor = analysis?.tier2Anchor || "";
+  const addOn = analysis?.tier1AddOnLine || "";
+
+  const subject = `Guest idea for ${podcast.showName}`;
+
+  const body = `Hey ${hostName},
+
+${anchor}
+
+I'm Joey, founder of Fit4Life Academy. I help busy professionals lose fat and build sustainable habits using an evidence-based approach - no fads, no BS, just what actually works backed by research.
+
+${addOn ? `${addOn}\n\n` : ""}I'd love to share some insights with your audience on [TOPIC BASED ON ANGLE]. Some ideas:
+
+- [Talking point 1]
+- [Talking point 2]
+- [Talking point 3]
+
+Would you be open to having me on as a guest?
+
+Best,
+Joey
+
+P.S. Happy to share my media kit or recent interviews if helpful.`;
+
+  return { subject, body };
+}
+
 export function NextActionBanner({
   podcast,
   onNavigateToAnalysis,
@@ -174,15 +204,46 @@ export function NextActionBanner({
       );
     }
 
-    // If READY_TO_DRAFT, show generate draft button
-    if (podcast.status === "READY_TO_DRAFT") {
+    // If READY_TO_DRAFT, show generate draft button that actually generates
+    if (podcast.status === "READY_TO_DRAFT" && !podcast.emailDraft) {
+      return (
+        <button
+          onClick={() => {
+            // Generate the draft template
+            const template = generateDraftTemplate(podcast);
+            // Save it to the database
+            fetch(`/api/podcasts/${podcast.id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                emailDraft: template.body,
+                emailSubject: template.subject,
+                workflowAction: "GENERATE_DRAFT",
+              }),
+            }).then(() => {
+              queryClient.invalidateQueries({ queryKey: ["podcast", podcast.id] });
+              queryClient.invalidateQueries({ queryKey: ["podcasts"] });
+              if (onNavigateToDraft) onNavigateToDraft();
+            });
+          }}
+          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+        >
+          <FileEdit className="h-4 w-4" />
+          Generate Draft
+          <ArrowRight className="h-4 w-4" />
+        </button>
+      );
+    }
+
+    // If already has draft, just navigate to view it
+    if (podcast.status === "READY_TO_DRAFT" && podcast.emailDraft) {
       return (
         <button
           onClick={onNavigateToDraft}
           className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
         >
           <FileEdit className="h-4 w-4" />
-          Generate Draft
+          View Draft
           <ArrowRight className="h-4 w-4" />
         </button>
       );

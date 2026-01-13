@@ -133,7 +133,7 @@ export default function PodcastDetailPage({ params }: Props) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <TierBadge tier={podcast.tier} />
+            <TierBadge tier={podcast.tier} pendingAnalysis={podcast.pendingAnalysis} />
             <StatusBadge status={podcast.status} />
           </div>
         </div>
@@ -274,7 +274,7 @@ export default function PodcastDetailPage({ params }: Props) {
   );
 }
 
-function TierBadge({ tier }: { tier: string }) {
+function TierBadge({ tier, pendingAnalysis }: { tier: string; pendingAnalysis?: any }) {
   const colors: Record<string, string> = {
     TIER_1: "bg-emerald-100 text-emerald-700",
     TIER_2: "bg-green-100 text-green-700",
@@ -282,9 +282,17 @@ function TierBadge({ tier }: { tier: string }) {
     PENDING: "bg-slate-100 text-slate-700",
   };
 
+  // Check if this was an override (tier doesn't match AI recommendation)
+  const aiRecommendedTier = pendingAnalysis?.tier;
+  const wasOverridden = aiRecommendedTier && tier !== "PENDING" && tier !== aiRecommendedTier;
+
   return (
-    <span className={cn("px-2 py-1 rounded text-xs font-medium", colors[tier] || colors.PENDING)}>
+    <span
+      className={cn("px-2 py-1 rounded text-xs font-medium", colors[tier] || colors.PENDING)}
+      title={wasOverridden ? `AI recommended ${aiRecommendedTier.replace("_", " ")} - Overridden` : undefined}
+    >
       {tier.replace("_", " ")}
+      {wasOverridden && " (Override)"}
     </span>
   );
 }
