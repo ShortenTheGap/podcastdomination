@@ -376,7 +376,7 @@ function FilterDropdown({
     <div className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 px-3 py-1.5 border rounded-lg hover:bg-muted"
+        className="flex items-center gap-2 px-3 py-1.5 border border-slate-300 rounded-lg hover:bg-slate-100 text-slate-700"
       >
         <Filter className="h-4 w-4" />
         <span className="text-sm">Filters</span>
@@ -384,68 +384,71 @@ function FilterDropdown({
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-64 bg-background border rounded-lg shadow-lg p-4 z-10">
-          <div className="space-y-4">
-            <div>
-              <label className="text-sm font-medium">Status</label>
-              <select
-                className="w-full mt-1 border rounded px-2 py-1 text-sm"
-                value={filters.status}
-                onChange={(e) =>
-                  onChange({ ...filters, status: e.target.value })
-                }
-              >
-                <option value="">All</option>
-                <option value="NOT_CONTACTED">Not Contacted</option>
-                <option value="READY_TO_DRAFT">Ready to Draft</option>
-                <option value="DRAFTED">Drafted</option>
-                <option value="QA_APPROVED">QA Approved</option>
-                <option value="SENT">Sent</option>
-                <option value="FOLLOW_UP_DUE">Follow-up Due</option>
-                <option value="REPLIED">Replied</option>
-              </select>
-            </div>
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full mt-2 w-64 bg-white border border-slate-200 rounded-lg shadow-lg p-4 z-20">
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium text-slate-700">Status</label>
+                <select
+                  className="w-full mt-1 border border-slate-300 rounded px-2 py-1 text-sm text-slate-700"
+                  value={filters.status}
+                  onChange={(e) =>
+                    onChange({ ...filters, status: e.target.value })
+                  }
+                >
+                  <option value="">All</option>
+                  <option value="NOT_CONTACTED">Not Contacted</option>
+                  <option value="READY_TO_DRAFT">Ready to Draft</option>
+                  <option value="DRAFTED">Drafted</option>
+                  <option value="QA_APPROVED">QA Approved</option>
+                  <option value="SENT">Sent</option>
+                  <option value="FOLLOW_UP_DUE">Follow-up Due</option>
+                  <option value="REPLIED">Replied</option>
+                </select>
+              </div>
 
-            <div>
-              <label className="text-sm font-medium">Tier</label>
-              <select
-                className="w-full mt-1 border rounded px-2 py-1 text-sm"
-                value={filters.tier}
-                onChange={(e) => onChange({ ...filters, tier: e.target.value })}
-              >
-                <option value="">All</option>
-                <option value="TIER_1">Tier 1</option>
-                <option value="TIER_2">Tier 2</option>
-                <option value="TIER_3">Tier 3</option>
-                <option value="PENDING">Pending</option>
-              </select>
-            </div>
+              <div>
+                <label className="text-sm font-medium text-slate-700">Tier</label>
+                <select
+                  className="w-full mt-1 border border-slate-300 rounded px-2 py-1 text-sm text-slate-700"
+                  value={filters.tier}
+                  onChange={(e) => onChange({ ...filters, tier: e.target.value })}
+                >
+                  <option value="">All</option>
+                  <option value="TIER_1">Tier 1</option>
+                  <option value="TIER_2">Tier 2</option>
+                  <option value="TIER_3">Tier 3</option>
+                  <option value="PENDING">Pending</option>
+                </select>
+              </div>
 
-            <div>
-              <label className="text-sm font-medium">Outcome</label>
-              <select
-                className="w-full mt-1 border rounded px-2 py-1 text-sm"
-                value={filters.outcome}
-                onChange={(e) =>
-                  onChange({ ...filters, outcome: e.target.value })
-                }
-              >
-                <option value="">All</option>
-                <option value="OPEN">Open</option>
-                <option value="BOOKED">Booked</option>
-                <option value="DECLINED">Declined</option>
-                <option value="NO_RESPONSE">No Response</option>
-              </select>
-            </div>
+              <div>
+                <label className="text-sm font-medium text-slate-700">Outcome</label>
+                <select
+                  className="w-full mt-1 border border-slate-300 rounded px-2 py-1 text-sm text-slate-700"
+                  value={filters.outcome}
+                  onChange={(e) =>
+                    onChange({ ...filters, outcome: e.target.value })
+                  }
+                >
+                  <option value="">All</option>
+                  <option value="OPEN">Open</option>
+                  <option value="BOOKED">Booked</option>
+                  <option value="DECLINED">Declined</option>
+                  <option value="NO_RESPONSE">No Response</option>
+                </select>
+              </div>
 
-            <button
-              onClick={() => onChange({ status: "", tier: "", outcome: "" })}
-              className="text-sm text-muted-foreground hover:text-foreground"
-            >
-              Clear filters
-            </button>
+              <button
+                onClick={() => onChange({ status: "", tier: "", outcome: "" })}
+                className="text-sm text-slate-500 hover:text-slate-700"
+              >
+                Clear filters
+              </button>
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );
@@ -462,12 +465,12 @@ function PipelineBoard({ podcasts }: { podcasts: any[] }) {
         return (
           <div
             key={group.id}
-            className="flex-shrink-0 w-80 bg-muted/30 rounded-lg"
+            className="flex-shrink-0 w-80 bg-slate-100 rounded-lg"
           >
-            <div className="p-3 border-b flex items-center gap-2">
+            <div className="p-3 border-b border-slate-200 flex items-center gap-2">
               <div className={cn("w-2 h-2 rounded-full", group.color)} />
-              <span className="font-medium">{group.label}</span>
-              <span className="text-muted-foreground text-sm ml-auto">
+              <span className="font-medium text-slate-900">{group.label}</span>
+              <span className="text-slate-500 text-sm ml-auto">
                 {groupPodcasts.length}
               </span>
             </div>
@@ -476,7 +479,7 @@ function PipelineBoard({ podcasts }: { podcasts: any[] }) {
                 <PodcastCard key={podcast.id} podcast={podcast} />
               ))}
               {groupPodcasts.length === 0 && (
-                <div className="text-center py-8 text-muted-foreground text-sm">
+                <div className="text-center py-8 text-slate-500 text-sm">
                   No podcasts
                 </div>
               )}
@@ -490,15 +493,15 @@ function PipelineBoard({ podcasts }: { podcasts: any[] }) {
 
 function PodcastCard({ podcast }: { podcast: any }) {
   return (
-    <div className="bg-background p-3 rounded-lg border shadow-sm hover:shadow-md transition-shadow cursor-pointer">
-      <p className="font-medium truncate">{podcast.showName}</p>
-      <p className="text-sm text-muted-foreground truncate">
+    <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer">
+      <p className="font-medium text-slate-900 truncate">{podcast.showName}</p>
+      <p className="text-sm text-slate-500 truncate">
         {podcast.hostName || "Unknown host"}
       </p>
       <div className="flex items-center gap-2 mt-2">
         <TierBadge tier={podcast.tier} />
         {podcast.nextAction && podcast.nextAction !== "NONE" && (
-          <span className="text-xs text-muted-foreground">
+          <span className="text-xs text-slate-500">
             {formatAction(podcast.nextAction)}
           </span>
         )}
