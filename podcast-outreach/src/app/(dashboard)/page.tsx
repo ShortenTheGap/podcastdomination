@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Send,
@@ -110,10 +110,10 @@ export default function PipelinePage() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-visible">
         {isLoading ? (
           <div className="flex items-center justify-center h-64">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
           </div>
         ) : viewMode === "table" ? (
           <PipelineTable podcasts={data?.podcasts || []} />
@@ -152,7 +152,20 @@ function PipelineTable({ podcasts }: { podcasts: any[] }) {
 
 function PodcastRow({ podcast }: { podcast: any }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const queryClient = useQueryClient();
+
+  const handleMenuOpen = () => {
+    if (buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      setMenuPosition({
+        top: rect.bottom + 4,
+        left: rect.right - 192, // 192px = w-48 menu width
+      });
+    }
+    setMenuOpen(!menuOpen);
+  };
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
@@ -239,9 +252,10 @@ function PodcastRow({ podcast }: { podcast: any }) {
       <td className="px-4 py-3">
         <OutcomeBadge outcome={podcast.outcome} />
       </td>
-      <td className="px-4 py-3 relative">
+      <td className="px-4 py-3">
         <button
-          onClick={() => setMenuOpen(!menuOpen)}
+          ref={buttonRef}
+          onClick={handleMenuOpen}
           className="p-1 hover:bg-slate-200 rounded"
         >
           <MoreHorizontal className="h-4 w-4 text-slate-500" />
@@ -250,10 +264,13 @@ function PodcastRow({ podcast }: { podcast: any }) {
         {menuOpen && (
           <>
             <div
-              className="fixed inset-0 z-10"
+              className="fixed inset-0 z-40"
               onClick={() => setMenuOpen(false)}
             />
-            <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-slate-200 rounded-lg shadow-lg z-20 py-1">
+            <div
+              className="fixed w-48 bg-white border border-slate-200 rounded-lg shadow-lg z-50 py-1"
+              style={{ top: menuPosition.top, left: menuPosition.left }}
+            >
               <a
                 href={podcast.primaryPlatformUrl}
                 target="_blank"
