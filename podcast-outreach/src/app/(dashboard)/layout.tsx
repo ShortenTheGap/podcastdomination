@@ -32,8 +32,8 @@ export default function DashboardLayout({
       {/* Sidebar */}
       <aside className="fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200">
         <div className="flex h-16 items-center gap-2 px-6 border-b border-gray-200">
-          <Mic2 className="h-8 w-8 text-gray-900" />
-          <span className="font-semibold text-lg">Podcast Outreach</span>
+          <Mic2 className="h-8 w-8 text-slate-900" />
+          <span className="font-semibold text-lg text-slate-900">Podcast Outreach</span>
         </div>
         <nav className="flex flex-col gap-1 p-4">
           {navigation.map((item) => {

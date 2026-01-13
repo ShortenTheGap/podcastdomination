@@ -73,22 +73,22 @@ export default function PipelinePage() {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="border-b px-6 py-4 flex items-center justify-between">
+      <div className="border-b border-slate-200 px-6 py-4 flex items-center justify-between bg-white">
         <div>
-          <h1 className="text-2xl font-semibold">Outreach Pipeline</h1>
-          <p className="text-sm text-muted-foreground">
+          <h1 className="text-2xl font-semibold text-slate-900">Outreach Pipeline</h1>
+          <p className="text-sm text-slate-500">
             {data?.total || 0} podcasts in pipeline
           </p>
         </div>
 
         <div className="flex items-center gap-3">
           {/* View Toggle */}
-          <div className="flex border rounded-lg">
+          <div className="flex border border-slate-300 rounded-lg">
             <button
               onClick={() => setViewMode("table")}
               className={cn(
-                "px-3 py-1.5 text-sm",
-                viewMode === "table" && "bg-muted"
+                "px-3 py-1.5 text-sm text-slate-700",
+                viewMode === "table" && "bg-slate-200"
               )}
             >
               Table
@@ -96,8 +96,8 @@ export default function PipelinePage() {
             <button
               onClick={() => setViewMode("kanban")}
               className={cn(
-                "px-3 py-1.5 text-sm",
-                viewMode === "kanban" && "bg-muted"
+                "px-3 py-1.5 text-sm text-slate-700",
+                viewMode === "kanban" && "bg-slate-200"
               )}
             >
               Board
@@ -151,6 +151,36 @@ function PipelineTable({ podcasts }: { podcasts: any[] }) {
 }
 
 function PodcastRow({ podcast }: { podcast: any }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const queryClient = useQueryClient();
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/podcasts/${podcast.id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["podcasts"] });
+    },
+  });
+
+  const updateTierMutation = useMutation({
+    mutationFn: async (tier: string) => {
+      const res = await fetch(`/api/podcasts/${podcast.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tier }),
+      });
+      if (!res.ok) throw new Error("Failed to update");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["podcasts"] });
+      setMenuOpen(false);
+    },
+  });
+
   const getStatusIcon = (status: string) => {
     switch (status) {
       case "QA_APPROVED":
@@ -209,10 +239,65 @@ function PodcastRow({ podcast }: { podcast: any }) {
       <td className="px-4 py-3">
         <OutcomeBadge outcome={podcast.outcome} />
       </td>
-      <td className="px-4 py-3">
-        <button className="p-1 hover:bg-slate-200 rounded">
+      <td className="px-4 py-3 relative">
+        <button
+          onClick={() => setMenuOpen(!menuOpen)}
+          className="p-1 hover:bg-slate-200 rounded"
+        >
           <MoreHorizontal className="h-4 w-4 text-slate-500" />
         </button>
+
+        {menuOpen && (
+          <>
+            <div
+              className="fixed inset-0 z-10"
+              onClick={() => setMenuOpen(false)}
+            />
+            <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-slate-200 rounded-lg shadow-lg z-20 py-1">
+              <a
+                href={podcast.primaryPlatformUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
+                onClick={() => setMenuOpen(false)}
+              >
+                View on Apple Podcasts
+              </a>
+              <hr className="my-1 border-slate-200" />
+              <div className="px-4 py-1 text-xs text-slate-500 font-medium">Set Tier</div>
+              <button
+                onClick={() => updateTierMutation.mutate("TIER_1")}
+                className="block w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
+              >
+                Tier 1 (Strong fit)
+              </button>
+              <button
+                onClick={() => updateTierMutation.mutate("TIER_2")}
+                className="block w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
+              >
+                Tier 2 (Good fit)
+              </button>
+              <button
+                onClick={() => updateTierMutation.mutate("TIER_3")}
+                className="block w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
+              >
+                Tier 3 (Weak fit)
+              </button>
+              <hr className="my-1 border-slate-200" />
+              <button
+                onClick={() => {
+                  if (confirm("Delete this podcast from your pipeline?")) {
+                    deleteMutation.mutate();
+                  }
+                  setMenuOpen(false);
+                }}
+                className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+              >
+                Remove from Pipeline
+              </button>
+            </div>
+          </>
+        )}
       </td>
     </tr>
   );
