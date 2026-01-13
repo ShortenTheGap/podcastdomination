@@ -210,9 +210,11 @@ enum StopRule {
 
 enum OutreachStatus {
   NOT_CONTACTED
-  READY_TO_DRAFT
-  DRAFTED
-  QA_APPROVED
+  READY           // Analyzed as good fit, draft ready
+  SKIPPED         // Analyzed as not a fit
+  READY_TO_DRAFT  // Legacy - keeping for compatibility
+  DRAFTED         // Legacy
+  QA_APPROVED     // Legacy
   SENT
   FOLLOW_UP_DUE
   FOLLOW_UP_SENT

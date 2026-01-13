@@ -13,9 +13,12 @@ import {
   Save,
   X,
   Loader2,
+  Sparkles,
+  CheckCircle,
+  AlertTriangle,
+  Send,
+  RotateCcw,
 } from "lucide-react";
-import { AnalysisPanel } from "@/components/pipeline/analysis-panel";
-import { NextActionBanner } from "@/components/pipeline/next-action-banner";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -25,12 +28,11 @@ interface Props {
 export default function PodcastDetailPage({ params }: Props) {
   const { id } = use(params);
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<"analysis" | "draft" | "details">("analysis");
+  const [isEditingEmail, setIsEditingEmail] = useState(false);
   const [isEditingContact, setIsEditingContact] = useState(false);
-  const [contactForm, setContactForm] = useState({
-    primaryEmail: "",
-    hostName: "",
-  });
+  const [emailDraft, setEmailDraft] = useState("");
+  const [emailSubject, setEmailSubject] = useState("");
+  const [contactForm, setContactForm] = useState({ primaryEmail: "", hostName: "" });
 
   const { data: podcast, isLoading, error } = useQuery({
     queryKey: ["podcast", id],
@@ -39,14 +41,110 @@ export default function PodcastDetailPage({ params }: Props) {
       if (!res.ok) throw new Error("Failed to fetch podcast");
       return res.json();
     },
+    staleTime: 0,
   });
 
-  const updateMutation = useMutation({
-    mutationFn: async (data: any) => {
+  // Initialize email state when podcast loads
+  useState(() => {
+    if (podcast) {
+      setEmailDraft(podcast.emailDraft || "");
+      setEmailSubject(podcast.emailSubject || "");
+    }
+  });
+
+  // Analyze & Draft mutation
+  const analyzeMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/podcasts/${id}/analyze-and-draft`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Analysis failed");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["podcast", id] });
+      queryClient.invalidateQueries({ queryKey: ["podcasts"] });
+      if (data.emailBody) {
+        setEmailDraft(data.emailBody);
+        setEmailSubject(data.emailSubject || "");
+      }
+    },
+  });
+
+  // Save email draft
+  const saveDraftMutation = useMutation({
+    mutationFn: async () => {
       const res = await fetch(`/api/podcasts/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify({
+          emailDraft,
+          emailSubject,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to save");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["podcast", id] });
+      setIsEditingEmail(false);
+    },
+  });
+
+  // Mark as sent
+  const sendMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/podcasts/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: "SENT",
+          sentPrimaryAt: new Date().toISOString(),
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to update");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["podcast", id] });
+      queryClient.invalidateQueries({ queryKey: ["podcasts"] });
+    },
+  });
+
+  // Skip podcast
+  const skipMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/podcasts/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: "SKIPPED",
+          suppressed: true,
+          suppressedAt: new Date().toISOString(),
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to skip");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["podcast", id] });
+      queryClient.invalidateQueries({ queryKey: ["podcasts"] });
+    },
+  });
+
+  // Update contact info
+  const updateContactMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/podcasts/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          primaryEmail: contactForm.primaryEmail || null,
+          hostName: contactForm.hostName || podcast.hostName,
+        }),
       });
       if (!res.ok) throw new Error("Failed to update");
       return res.json();
@@ -54,6 +152,36 @@ export default function PodcastDetailPage({ params }: Props) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["podcast", id] });
       setIsEditingContact(false);
+    },
+  });
+
+  // Reanalyze (for skipped podcasts)
+  const reanalyzeMutation = useMutation({
+    mutationFn: async () => {
+      // Reset status first
+      await fetch(`/api/podcasts/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: "NOT_CONTACTED",
+          suppressed: false,
+          suppressedAt: null,
+        }),
+      });
+      // Then analyze
+      const res = await fetch(`/api/podcasts/${id}/analyze-and-draft`, {
+        method: "POST",
+      });
+      if (!res.ok) throw new Error("Analysis failed");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["podcast", id] });
+      queryClient.invalidateQueries({ queryKey: ["podcasts"] });
+      if (data.emailBody) {
+        setEmailDraft(data.emailBody);
+        setEmailSubject(data.emailSubject || "");
+      }
     },
   });
 
@@ -76,15 +204,15 @@ export default function PodcastDetailPage({ params }: Props) {
     );
   }
 
-  const handleSaveContact = () => {
-    updateMutation.mutate({
-      primaryEmail: contactForm.primaryEmail || null,
-      hostName: contactForm.hostName || podcast.hostName,
-    });
-  };
+  const analysis = podcast.pendingAnalysis;
+  const isAnalyzed = podcast.analysisRunAt !== null;
+  const isGoodFit = analysis?.isGoodFit === true;
+  const isSkipped = podcast.status === "SKIPPED";
+  const isSent = podcast.status === "SENT";
+  const isReady = podcast.status === "READY" || podcast.status === "READY_TO_DRAFT" || podcast.status === "DRAFTED" || podcast.status === "QA_APPROVED";
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className="max-w-3xl mx-auto">
       {/* Back button */}
       <Link
         href="/"
@@ -94,54 +222,47 @@ export default function PodcastDetailPage({ params }: Props) {
         Back to Pipeline
       </Link>
 
-      {/* Header */}
+      {/* Podcast Header */}
       <div className="bg-white border border-slate-200 rounded-lg p-6 mb-6">
-        <div className="flex items-start justify-between">
-          <div className="flex items-start gap-4">
-            <div className="w-16 h-16 bg-slate-100 rounded-lg flex items-center justify-center">
-              <Mic2 className="h-8 w-8 text-slate-400" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-semibold text-slate-900">
-                {podcast.showName}
-              </h1>
-              <p className="text-slate-500">{podcast.hostName || "Unknown host"}</p>
-              <div className="flex items-center gap-4 mt-2">
-                {podcast.applePodcastUrl && (
-                  <a
-                    href={podcast.applePodcastUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
-                  >
-                    <ExternalLink className="h-3 w-3" />
-                    Apple Podcasts
-                  </a>
-                )}
-                {podcast.websiteUrl && (
-                  <a
-                    href={podcast.websiteUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
-                  >
-                    <Globe className="h-3 w-3" />
-                    Website
-                  </a>
-                )}
-              </div>
+        <div className="flex items-start gap-4">
+          <div className="w-16 h-16 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
+            <Mic2 className="h-8 w-8 text-blue-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-2xl font-semibold text-slate-900 truncate">
+              {podcast.showName}
+            </h1>
+            <p className="text-slate-500">{podcast.hostName || "Unknown host"}</p>
+            <div className="flex items-center gap-4 mt-2">
+              <a
+                href={podcast.primaryPlatformUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
+              >
+                <ExternalLink className="h-3 w-3" />
+                View Podcast
+              </a>
+              {podcast.websiteUrl && (
+                <a
+                  href={podcast.websiteUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                >
+                  <Globe className="h-3 w-3" />
+                  Website
+                </a>
+              )}
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <TierBadge tier={podcast.tier} pendingAnalysis={podcast.pendingAnalysis} />
-            <StatusBadge status={podcast.status} />
-          </div>
+          <StatusBadge status={podcast.status} />
         </div>
 
-        {/* Contact info */}
+        {/* Contact Info */}
         <div className="mt-6 pt-6 border-t border-slate-200">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-medium text-slate-700">Contact Information</h3>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-medium text-slate-700">Contact</h3>
             {!isEditingContact ? (
               <button
                 onClick={() => {
@@ -151,30 +272,23 @@ export default function PodcastDetailPage({ params }: Props) {
                   });
                   setIsEditingContact(true);
                 }}
-                className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                className="text-sm text-blue-600 hover:text-blue-700"
               >
-                <Edit2 className="h-3 w-3" />
                 Edit
               </button>
             ) : (
-              <div className="flex items-center gap-2">
+              <div className="flex gap-2">
                 <button
-                  onClick={handleSaveContact}
-                  disabled={updateMutation.isPending}
-                  className="text-sm text-green-600 hover:text-green-700 flex items-center gap-1"
+                  onClick={() => updateContactMutation.mutate()}
+                  disabled={updateContactMutation.isPending}
+                  className="text-sm text-green-600 hover:text-green-700"
                 >
-                  {updateMutation.isPending ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <Save className="h-3 w-3" />
-                  )}
-                  Save
+                  {updateContactMutation.isPending ? "Saving..." : "Save"}
                 </button>
                 <button
                   onClick={() => setIsEditingContact(false)}
-                  className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1"
+                  className="text-sm text-slate-500"
                 >
-                  <X className="h-3 w-3" />
                   Cancel
                 </button>
               </div>
@@ -182,390 +296,296 @@ export default function PodcastDetailPage({ params }: Props) {
           </div>
           {isEditingContact ? (
             <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs text-slate-500 block mb-1">Host Name</label>
-                <input
-                  type="text"
-                  value={contactForm.hostName}
-                  onChange={(e) =>
-                    setContactForm({ ...contactForm, hostName: e.target.value })
-                  }
-                  className="w-full border border-slate-300 rounded px-3 py-2 text-sm"
-                  placeholder="Enter host name"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-slate-500 block mb-1">Email Address</label>
-                <input
-                  type="email"
-                  value={contactForm.primaryEmail}
-                  onChange={(e) =>
-                    setContactForm({ ...contactForm, primaryEmail: e.target.value })
-                  }
-                  className="w-full border border-slate-300 rounded px-3 py-2 text-sm"
-                  placeholder="Enter email address"
-                />
-              </div>
+              <input
+                type="text"
+                value={contactForm.hostName}
+                onChange={(e) => setContactForm({ ...contactForm, hostName: e.target.value })}
+                placeholder="Host name"
+                className="border border-slate-300 rounded px-3 py-2 text-sm"
+              />
+              <input
+                type="email"
+                value={contactForm.primaryEmail}
+                onChange={(e) => setContactForm({ ...contactForm, primaryEmail: e.target.value })}
+                placeholder="Email address"
+                className="border border-slate-300 rounded px-3 py-2 text-sm"
+              />
             </div>
           ) : (
-            <div className="flex items-center gap-6">
-              <div className="flex items-center gap-2">
-                <Mail className="h-4 w-4 text-slate-400" />
-                <span className="text-sm text-slate-700">
-                  {podcast.primaryEmail || "No email"}
-                </span>
-              </div>
+            <div className="flex items-center gap-2 text-sm text-slate-600">
+              <Mail className="h-4 w-4 text-slate-400" />
+              {podcast.primaryEmail || "No email added"}
             </div>
           )}
         </div>
       </div>
 
-      {/* Next Action Banner */}
-      <NextActionBanner
-        podcast={podcast}
-        onNavigateToAnalysis={() => setActiveTab("analysis")}
-        onNavigateToDraft={() => setActiveTab("draft")}
-      />
-
-      {/* Tabs */}
-      <div className="border-b border-slate-200 mb-6">
-        <div className="flex gap-6">
+      {/* Main Content Area */}
+      {!isAnalyzed ? (
+        // Not analyzed yet - show analyze button
+        <div className="bg-white border border-slate-200 rounded-lg p-8 text-center">
+          <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Sparkles className="h-8 w-8 text-blue-600" />
+          </div>
+          <h2 className="text-xl font-semibold text-slate-900 mb-2">
+            Ready to Analyze
+          </h2>
+          <p className="text-slate-500 mb-6 max-w-md mx-auto">
+            AI will evaluate if this podcast is a good fit and draft a personalized outreach email.
+          </p>
           <button
-            onClick={() => setActiveTab("analysis")}
-            className={cn(
-              "pb-3 text-sm font-medium border-b-2 -mb-px",
-              activeTab === "analysis"
-                ? "border-blue-600 text-blue-600"
-                : "border-transparent text-slate-500 hover:text-slate-700"
-            )}
+            onClick={() => analyzeMutation.mutate()}
+            disabled={analyzeMutation.isPending}
+            className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-lg"
           >
-            Analysis & Tiering
-          </button>
-          <button
-            onClick={() => setActiveTab("draft")}
-            className={cn(
-              "pb-3 text-sm font-medium border-b-2 -mb-px",
-              activeTab === "draft"
-                ? "border-blue-600 text-blue-600"
-                : "border-transparent text-slate-500 hover:text-slate-700"
+            {analyzeMutation.isPending ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Analyzing...
+              </>
+            ) : (
+              <>
+                <Sparkles className="h-5 w-5" />
+                Analyze & Draft
+              </>
             )}
-          >
-            Email Draft
           </button>
-          <button
-            onClick={() => setActiveTab("details")}
-            className={cn(
-              "pb-3 text-sm font-medium border-b-2 -mb-px",
-              activeTab === "details"
-                ? "border-blue-600 text-blue-600"
-                : "border-transparent text-slate-500 hover:text-slate-700"
-            )}
-          >
-            Details & Notes
-          </button>
+          {analyzeMutation.isError && (
+            <p className="mt-4 text-red-600 text-sm">{analyzeMutation.error.message}</p>
+          )}
         </div>
-      </div>
+      ) : isSkipped ? (
+        // Analyzed as NOT a fit
+        <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+          <div className="bg-red-50 px-6 py-4 border-b border-red-200">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                <X className="h-6 w-6 text-red-600" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-red-900">Not a Fit</h3>
+                <p className="text-sm text-red-700">AI determined this podcast isn't suitable for outreach</p>
+              </div>
+            </div>
+          </div>
+          <div className="p-6">
+            <p className="text-slate-700 mb-4">{analysis?.fitReason}</p>
+            {analysis?.redFlags?.length > 0 && (
+              <div className="mb-4">
+                <p className="text-sm font-medium text-slate-700 mb-2">Red Flags:</p>
+                <div className="flex flex-wrap gap-2">
+                  {analysis.redFlags.map((flag: string, i: number) => (
+                    <span key={i} className="px-2 py-1 bg-red-100 text-red-700 rounded text-sm">
+                      {flag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            <button
+              onClick={() => reanalyzeMutation.mutate()}
+              disabled={reanalyzeMutation.isPending}
+              className="inline-flex items-center gap-2 px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50"
+            >
+              {reanalyzeMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RotateCcw className="h-4 w-4" />
+              )}
+              Re-analyze
+            </button>
+          </div>
+        </div>
+      ) : isSent ? (
+        // Already sent
+        <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+          <div className="bg-purple-50 px-6 py-4 border-b border-purple-200">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                <Send className="h-6 w-6 text-purple-600" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-purple-900">Email Sent</h3>
+                <p className="text-sm text-purple-700">
+                  Sent on {new Date(podcast.sentPrimaryAt).toLocaleDateString()}
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="p-6">
+            <div className="mb-4">
+              <p className="text-sm font-medium text-slate-700 mb-1">Subject</p>
+              <p className="text-slate-900">{podcast.emailSubject}</p>
+            </div>
+            <div>
+              <p className="text-sm font-medium text-slate-700 mb-1">Email</p>
+              <div className="bg-slate-50 rounded-lg p-4 whitespace-pre-wrap text-slate-700 font-mono text-sm">
+                {podcast.emailDraft}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : isReady || isGoodFit ? (
+        // Good fit - show email draft
+        <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+          {/* Analysis Summary */}
+          <div className="bg-green-50 px-6 py-4 border-b border-green-200">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                  <CheckCircle className="h-6 w-6 text-green-600" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-green-900">Good Fit</h3>
+                  <p className="text-sm text-green-700">{analysis?.fitReason}</p>
+                </div>
+              </div>
+              {analysis?.suggestedAngle && (
+                <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">
+                  {analysis.suggestedAngle}
+                </span>
+              )}
+            </div>
+          </div>
 
-      {/* Tab content */}
-      {activeTab === "analysis" && <AnalysisPanel podcast={podcast} />}
-      {activeTab === "draft" && <DraftPanel podcast={podcast} />}
-      {activeTab === "details" && <DetailsPanel podcast={podcast} />}
+          {/* Email Draft */}
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-slate-900">Email Draft</h3>
+              {!isEditingEmail ? (
+                <button
+                  onClick={() => {
+                    setEmailDraft(podcast.emailDraft || "");
+                    setEmailSubject(podcast.emailSubject || "");
+                    setIsEditingEmail(true);
+                  }}
+                  className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                >
+                  <Edit2 className="h-3 w-3" />
+                  Edit
+                </button>
+              ) : (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => saveDraftMutation.mutate()}
+                    disabled={saveDraftMutation.isPending}
+                    className="text-sm text-green-600 hover:text-green-700 flex items-center gap-1"
+                  >
+                    {saveDraftMutation.isPending ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Save className="h-3 w-3" />
+                    )}
+                    Save
+                  </button>
+                  <button
+                    onClick={() => setIsEditingEmail(false)}
+                    className="text-sm text-slate-500"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Subject */}
+            <div className="mb-4">
+              <label className="text-sm font-medium text-slate-700 block mb-1">Subject</label>
+              {isEditingEmail ? (
+                <input
+                  type="text"
+                  value={emailSubject}
+                  onChange={(e) => setEmailSubject(e.target.value)}
+                  className="w-full border border-slate-300 rounded px-3 py-2"
+                />
+              ) : (
+                <p className="text-slate-900">{podcast.emailSubject || "No subject"}</p>
+              )}
+            </div>
+
+            {/* Body */}
+            <div className="mb-6">
+              <label className="text-sm font-medium text-slate-700 block mb-1">Message</label>
+              {isEditingEmail ? (
+                <textarea
+                  value={emailDraft}
+                  onChange={(e) => setEmailDraft(e.target.value)}
+                  rows={12}
+                  className="w-full border border-slate-300 rounded px-3 py-2 font-mono text-sm"
+                />
+              ) : (
+                <div className="bg-slate-50 rounded-lg p-4 whitespace-pre-wrap text-slate-700 font-mono text-sm">
+                  {podcast.emailDraft || "No draft yet"}
+                </div>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3 pt-4 border-t border-slate-200">
+              {!podcast.primaryEmail ? (
+                <div className="flex items-center gap-2 text-amber-600">
+                  <AlertTriangle className="h-4 w-4" />
+                  <span className="text-sm">Add an email address above before sending</span>
+                </div>
+              ) : (
+                <button
+                  onClick={() => sendMutation.mutate()}
+                  disabled={sendMutation.isPending}
+                  className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                >
+                  {sendMutation.isPending ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <Send className="h-5 w-5" />
+                  )}
+                  Mark as Sent
+                </button>
+              )}
+              <button
+                onClick={() => skipMutation.mutate()}
+                disabled={skipMutation.isPending}
+                className="px-4 py-3 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 disabled:opacity-50"
+              >
+                {skipMutation.isPending ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  "Skip"
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Show Description if available */}
+      {podcast.showDescription && (
+        <div className="bg-white border border-slate-200 rounded-lg p-6 mt-6">
+          <h3 className="font-semibold text-slate-900 mb-3">About the Show</h3>
+          <p className="text-slate-600 text-sm whitespace-pre-wrap">{podcast.showDescription}</p>
+        </div>
+      )}
     </div>
-  );
-}
-
-function TierBadge({ tier, pendingAnalysis }: { tier: string; pendingAnalysis?: any }) {
-  const colors: Record<string, string> = {
-    TIER_1: "bg-emerald-100 text-emerald-700",
-    TIER_2: "bg-green-100 text-green-700",
-    TIER_3: "bg-red-100 text-red-700",
-    PENDING: "bg-slate-100 text-slate-700",
-  };
-
-  // Check if this was an override (tier doesn't match AI recommendation)
-  const aiRecommendedTier = pendingAnalysis?.tier;
-  const wasOverridden = aiRecommendedTier && tier !== "PENDING" && tier !== aiRecommendedTier;
-
-  return (
-    <span
-      className={cn("px-2 py-1 rounded text-xs font-medium", colors[tier] || colors.PENDING)}
-      title={wasOverridden ? `AI recommended ${aiRecommendedTier.replace("_", " ")} - Overridden` : undefined}
-    >
-      {tier.replace("_", " ")}
-      {wasOverridden && " (Override)"}
-    </span>
   );
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const colors: Record<string, string> = {
-    NOT_CONTACTED: "bg-slate-100 text-slate-700",
-    READY_TO_DRAFT: "bg-blue-100 text-blue-700",
-    DRAFTED: "bg-amber-100 text-amber-700",
-    QA_APPROVED: "bg-green-100 text-green-700",
-    SENT: "bg-purple-100 text-purple-700",
-    REPLIED: "bg-emerald-100 text-emerald-700",
-    CLOSED: "bg-slate-100 text-slate-700",
+  const config: Record<string, { label: string; color: string }> = {
+    NOT_CONTACTED: { label: "New", color: "bg-slate-100 text-slate-700" },
+    READY: { label: "Ready to Send", color: "bg-green-100 text-green-700" },
+    READY_TO_DRAFT: { label: "Ready to Send", color: "bg-green-100 text-green-700" },
+    DRAFTED: { label: "Ready to Send", color: "bg-green-100 text-green-700" },
+    QA_APPROVED: { label: "Ready to Send", color: "bg-green-100 text-green-700" },
+    SKIPPED: { label: "Skipped", color: "bg-red-100 text-red-700" },
+    SENT: { label: "Sent", color: "bg-purple-100 text-purple-700" },
+    REPLIED: { label: "Replied", color: "bg-emerald-100 text-emerald-700" },
+    CLOSED: { label: "Closed", color: "bg-slate-100 text-slate-700" },
   };
 
-  const label = status.split("_").map(w => w.charAt(0) + w.slice(1).toLowerCase()).join(" ");
+  const { label, color } = config[status] || config.NOT_CONTACTED;
 
   return (
-    <span className={cn("px-2 py-1 rounded text-xs font-medium", colors[status] || colors.NOT_CONTACTED)}>
+    <span className={cn("px-3 py-1 rounded-full text-sm font-medium", color)}>
       {label}
     </span>
-  );
-}
-
-function DraftPanel({ podcast }: { podcast: any }) {
-  const queryClient = useQueryClient();
-  const [draft, setDraft] = useState(podcast.emailDraft || "");
-  const [subject, setSubject] = useState(podcast.emailSubject || "");
-  const [isEditing, setIsEditing] = useState(false);
-
-  const generateMutation = useMutation({
-    mutationFn: async () => {
-      // For now, generate a simple template - in the future, this could call an AI endpoint
-      const template = generateDraftTemplate(podcast);
-      return template;
-    },
-    onSuccess: (template) => {
-      setDraft(template.body);
-      setSubject(template.subject);
-      setIsEditing(true);
-    },
-  });
-
-  const saveMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch(`/api/podcasts/${podcast.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          emailDraft: draft,
-          emailSubject: subject,
-          workflowAction: "GENERATE_DRAFT",
-        }),
-      });
-      if (!res.ok) throw new Error("Failed to save");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["podcast", podcast.id] });
-      setIsEditing(false);
-    },
-  });
-
-  // Show message if podcast hasn't been analyzed/approved yet
-  if (podcast.tier === "PENDING" || podcast.status === "NOT_CONTACTED") {
-    return (
-      <div className="bg-white border border-slate-200 rounded-lg p-6 text-center">
-        <h3 className="text-lg font-semibold text-slate-900 mb-2">Analysis Required</h3>
-        <p className="text-slate-500 mb-4">
-          You need to run AI analysis and approve the tier before creating a draft.
-        </p>
-        <p className="text-sm text-slate-400">
-          Go to the "Analysis & Tiering" tab to get started.
-        </p>
-      </div>
-    );
-  }
-
-  if (!podcast.emailDraft && podcast.status === "READY_TO_DRAFT") {
-    return (
-      <div className="bg-white border border-slate-200 rounded-lg p-6 text-center">
-        <h3 className="text-lg font-semibold text-slate-900 mb-2">Generate Email Draft</h3>
-        <p className="text-slate-500 mb-6">
-          Create a personalized outreach email using the analysis results.
-        </p>
-        <button
-          onClick={() => generateMutation.mutate()}
-          disabled={generateMutation.isPending}
-          className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-        >
-          {generateMutation.isPending ? (
-            <Loader2 className="h-5 w-5 animate-spin" />
-          ) : (
-            <Edit2 className="h-5 w-5" />
-          )}
-          Generate Draft
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-      <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
-        <h3 className="font-semibold text-slate-900">Email Draft</h3>
-        <div className="flex items-center gap-2">
-          {isEditing ? (
-            <>
-              <button
-                onClick={() => saveMutation.mutate()}
-                disabled={saveMutation.isPending}
-                className="text-sm text-green-600 hover:text-green-700 flex items-center gap-1"
-              >
-                {saveMutation.isPending ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <Save className="h-3 w-3" />
-                )}
-                Save Draft
-              </button>
-              <button
-                onClick={() => {
-                  setDraft(podcast.emailDraft || "");
-                  setSubject(podcast.emailSubject || "");
-                  setIsEditing(false);
-                }}
-                className="text-sm text-slate-500 hover:text-slate-700"
-              >
-                Cancel
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={() => setIsEditing(true)}
-              className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
-            >
-              <Edit2 className="h-3 w-3" />
-              Edit
-            </button>
-          )}
-        </div>
-      </div>
-      <div className="p-6 space-y-4">
-        <div>
-          <label className="text-sm font-medium text-slate-700 block mb-1">Subject</label>
-          {isEditing ? (
-            <input
-              type="text"
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              className="w-full border border-slate-300 rounded px-3 py-2"
-              placeholder="Email subject..."
-            />
-          ) : (
-            <p className="text-slate-700">{subject || "No subject"}</p>
-          )}
-        </div>
-        <div>
-          <label className="text-sm font-medium text-slate-700 block mb-1">Body</label>
-          {isEditing ? (
-            <textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              className="w-full border border-slate-300 rounded px-3 py-2 min-h-[300px] font-mono text-sm"
-              placeholder="Email body..."
-            />
-          ) : (
-            <div className="bg-slate-50 rounded-lg p-4 whitespace-pre-wrap text-slate-700 font-mono text-sm">
-              {draft || "No draft yet"}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function generateDraftTemplate(podcast: any) {
-  const hostName = podcast.hostName || "there";
-  const analysis = podcast.pendingAnalysis;
-  const anchor = podcast.tier2Anchor || analysis?.tier2Anchor || "";
-  const addOn = podcast.tier1AddOnLine || analysis?.tier1AddOnLine || "";
-
-  const subject = `Guest idea for ${podcast.showName}`;
-
-  const body = `Hey ${hostName},
-
-${anchor}
-
-I'm Joey, founder of Fit4Life Academy. I help busy professionals lose fat and build sustainable habits using an evidence-based approach - no fads, no BS, just what actually works backed by research.
-
-${addOn ? `${addOn}\n\n` : ""}I'd love to share some insights with your audience on [TOPIC BASED ON ANGLE]. Some ideas:
-
-- [Talking point 1]
-- [Talking point 2]
-- [Talking point 3]
-
-Would you be open to having me on as a guest?
-
-Best,
-Joey
-
-P.S. Happy to share my media kit or recent interviews if helpful.`;
-
-  return { subject, body };
-}
-
-function DetailsPanel({ podcast }: { podcast: any }) {
-  return (
-    <div className="space-y-6">
-      {/* Description */}
-      {podcast.showDescription && (
-        <div className="bg-white border border-slate-200 rounded-lg p-6">
-          <h3 className="font-semibold text-slate-900 mb-3">Show Description</h3>
-          <p className="text-slate-600 whitespace-pre-wrap">{podcast.showDescription}</p>
-        </div>
-      )}
-
-      {/* Episode titles */}
-      {podcast.recentEpisodeTitles && podcast.recentEpisodeTitles.length > 0 && (
-        <div className="bg-white border border-slate-200 rounded-lg p-6">
-          <h3 className="font-semibold text-slate-900 mb-3">Recent Episodes</h3>
-          <ul className="space-y-2">
-            {podcast.recentEpisodeTitles.map((title: string, i: number) => (
-              <li key={i} className="text-slate-600 text-sm">
-                {i + 1}. {title}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Notes */}
-      <div className="bg-white border border-slate-200 rounded-lg p-6">
-        <h3 className="font-semibold text-slate-900 mb-3">Notes</h3>
-        {podcast.notes && podcast.notes.length > 0 ? (
-          <div className="space-y-3">
-            {podcast.notes.map((note: any) => (
-              <div key={note.id} className="bg-slate-50 rounded p-3">
-                <p className="text-slate-600 text-sm">{note.content}</p>
-                <p className="text-xs text-slate-400 mt-1">
-                  {new Date(note.createdAt).toLocaleString()}
-                </p>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-slate-500 text-sm">No notes yet</p>
-        )}
-      </div>
-
-      {/* Metadata */}
-      <div className="bg-white border border-slate-200 rounded-lg p-6">
-        <h3 className="font-semibold text-slate-900 mb-3">Metadata</h3>
-        <dl className="grid grid-cols-2 gap-4 text-sm">
-          <div>
-            <dt className="text-slate-500">Created</dt>
-            <dd className="text-slate-700">{new Date(podcast.createdAt).toLocaleDateString()}</dd>
-          </div>
-          <div>
-            <dt className="text-slate-500">Last Updated</dt>
-            <dd className="text-slate-700">{new Date(podcast.updatedAt).toLocaleDateString()}</dd>
-          </div>
-          <div>
-            <dt className="text-slate-500">Discovery Source</dt>
-            <dd className="text-slate-700">{podcast.discoverySource || "Manual"}</dd>
-          </div>
-          <div>
-            <dt className="text-slate-500">Dedupe Key</dt>
-            <dd className="text-slate-700 font-mono text-xs">{podcast.dedupeKey}</dd>
-          </div>
-        </dl>
-      </div>
-    </div>
   );
 }

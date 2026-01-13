@@ -39,7 +39,7 @@ export async function GET(
 const UpdateSchema = z.object({
   tier: z.enum(["PENDING", "TIER_1", "TIER_2", "TIER_3"]).optional(),
   status: z.enum([
-    "NOT_CONTACTED", "READY_TO_DRAFT", "DRAFTED", "QA_APPROVED",
+    "NOT_CONTACTED", "READY", "SKIPPED", "READY_TO_DRAFT", "DRAFTED", "QA_APPROVED",
     "SENT", "FOLLOW_UP_DUE", "FOLLOW_UP_SENT", "ESCALATION_DUE",
     "ESCALATED", "REPLIED", "CLOSED"
   ]).optional(),
