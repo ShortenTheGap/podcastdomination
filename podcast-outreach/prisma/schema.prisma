@@ -183,6 +183,29 @@ model SystemConfig {
   updatedAt             DateTime  @updatedAt
 }
 
+// Perfect Podcast Criteria - defines what makes an ideal podcast target
+model PodcastCriteria {
+  id          String    @id @default(cuid())
+
+  name        String    // e.g., "Has guest interviews"
+  description String?   // Explanation of the criterion
+  category    String    @default("general") // general, content, audience, technical
+
+  isEnabled   Boolean   @default(true)
+  isRequired  Boolean   @default(false) // Required = instant skip if not met
+  isCustom    Boolean   @default(false) // User-added vs system default
+
+  weight      Int       @default(1) // 1-5, how important for scoring
+
+  // For AI prompt generation
+  promptHint  String?   // How AI should evaluate this criterion
+
+  sortOrder   Int       @default(0)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
 // ============================================
 // ENUMS
 // ============================================

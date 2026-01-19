@@ -358,18 +358,50 @@ export default function PodcastDetailPage({ params }: Props) {
         // Analyzed as NOT a fit
         <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
           <div className="bg-red-50 px-6 py-4 border-b border-red-200">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
-                <X className="h-6 w-6 text-red-600" />
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                  <X className="h-6 w-6 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-red-900">Not a Fit</h3>
+                  <p className="text-sm text-red-700">AI determined this podcast isn't suitable for outreach</p>
+                </div>
               </div>
-              <div>
-                <h3 className="font-semibold text-red-900">Not a Fit</h3>
-                <p className="text-sm text-red-700">AI determined this podcast isn't suitable for outreach</p>
-              </div>
+              {analysis?.fitScore !== undefined && (
+                <span className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm font-medium">
+                  Score: {analysis.fitScore}/100
+                </span>
+              )}
             </div>
           </div>
           <div className="p-6">
             <p className="text-slate-700 mb-4">{analysis?.fitReason}</p>
+
+            {/* Criteria Results */}
+            {analysis?.criteriaResults?.length > 0 && (
+              <div className="mb-4">
+                <p className="text-sm font-medium text-slate-700 mb-2">Criteria Evaluation:</p>
+                <div className="space-y-1">
+                  {analysis.criteriaResults.map((result: any, i: number) => (
+                    <div key={i} className="flex items-center gap-2 text-sm">
+                      {result.met ? (
+                        <CheckCircle className="h-4 w-4 text-green-500 flex-shrink-0" />
+                      ) : (
+                        <X className="h-4 w-4 text-red-500 flex-shrink-0" />
+                      )}
+                      <span className={result.met ? "text-slate-600" : "text-red-700"}>
+                        {result.criterion}
+                      </span>
+                      {result.note && (
+                        <span className="text-slate-400">- {result.note}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {analysis?.redFlags?.length > 0 && (
               <div className="mb-4">
                 <p className="text-sm font-medium text-slate-700 mb-2">Red Flags:</p>
@@ -440,11 +472,18 @@ export default function PodcastDetailPage({ params }: Props) {
                   <p className="text-sm text-green-700">{analysis?.fitReason}</p>
                 </div>
               </div>
-              {analysis?.suggestedAngle && (
-                <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">
-                  {analysis.suggestedAngle}
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                {analysis?.fitScore !== undefined && (
+                  <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">
+                    Score: {analysis.fitScore}/100
+                  </span>
+                )}
+                {analysis?.suggestedAngle && (
+                  <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
+                    {analysis.suggestedAngle}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
