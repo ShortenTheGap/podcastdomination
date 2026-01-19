@@ -269,3 +269,27 @@ export function useSentEmails(status?: string) {
     },
   });
 }
+
+// Recommendations feed (Best Match or Momentum)
+export function useRecommendations() {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    { results: DiscoveryResult[]; count: number; type: string },
+    Error,
+    { type: "best_match" | "momentum"; limit?: number }
+  >({
+    mutationFn: async ({ type, limit = 10 }) => {
+      const res = await fetch("/api/discovery/recommendations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type, limit }),
+      });
+      if (!res.ok) throw new Error("Failed to fetch recommendations");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["podcasts"] });
+    },
+  });
+}
