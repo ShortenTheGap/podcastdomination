@@ -125,14 +125,64 @@ export async function POST(request: NextRequest) {
     let results;
 
     if (type === "seed_guest") {
-      // For seed guest searches, combine guest name with category if provided
-      const searchQuery = category ? `${query} ${category} podcast` : query;
-      results = await searchApplePodcasts(searchQuery, limit);
-      results = results.map((r: Record<string, unknown>) => ({
-        ...r,
-        discoverySource: category ? `seed:${query} (${category})` : `seed:${query}`,
-        recentGuests: [query],
-      }));
+      // For seed guest searches with categories, search each category separately
+      if (category) {
+        const categories = category.split(",").map((c) => c.trim()).filter(Boolean);
+        const allResults: Record<string, unknown>[] = [];
+        const seenIds = new Set<string>();
+
+        // Search for each category + guest name combination
+        for (const cat of categories) {
+          const searchQuery = `${query} ${cat} podcast`;
+          const categoryResults = await searchApplePodcasts(searchQuery, Math.ceil(limit / categories.length) + 5);
+
+          for (const result of categoryResults) {
+            const dedupeKey = result.dedupeKey as string;
+            if (!seenIds.has(dedupeKey)) {
+              seenIds.add(dedupeKey);
+              allResults.push(result);
+            }
+          }
+        }
+
+        // Also filter/boost results that match the categories in their genre
+        const categoryLower = categories.map((c) => c.toLowerCase());
+        results = allResults
+          .map((r) => {
+            const genres = ((r.genres as string[]) || []).map((g) => g.toLowerCase());
+            const genreStr = genres.join(" ");
+            const showName = ((r.showName as string) || "").toLowerCase();
+
+            // Check if any category matches the genre or show name
+            const matchesCategory = categoryLower.some(
+              (cat) => genreStr.includes(cat) || showName.includes(cat)
+            );
+
+            return {
+              ...r,
+              discoverySource: `seed:${query} (${category})`,
+              recentGuests: [query],
+              _matchesCategory: matchesCategory,
+            };
+          })
+          // Sort: matching categories first
+          .sort((a, b) => {
+            if (a._matchesCategory && !b._matchesCategory) return -1;
+            if (!a._matchesCategory && b._matchesCategory) return 1;
+            return 0;
+          })
+          // Remove the temporary field and limit results
+          .map(({ _matchesCategory, ...rest }) => rest)
+          .slice(0, limit);
+      } else {
+        // No category specified, just search for the guest name
+        results = await searchApplePodcasts(query, limit);
+        results = results.map((r: Record<string, unknown>) => ({
+          ...r,
+          discoverySource: `seed:${query}`,
+          recentGuests: [query],
+        }));
+      }
     } else {
       // Category search
       results = await searchApplePodcasts(query, limit);
