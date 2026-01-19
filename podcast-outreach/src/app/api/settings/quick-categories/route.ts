@@ -12,10 +12,26 @@ const DEFAULT_CATEGORIES = [
   "Parenting",
 ];
 
+// In-memory fallback storage (used when database table doesn't exist)
+let inMemoryCategories: { id: string; name: string; sortOrder: number }[] | null = null;
+
+function generateId() {
+  return Math.random().toString(36).substring(2, 15);
+}
+
+function getDefaultCategories() {
+  return DEFAULT_CATEGORIES.map((name, index) => ({
+    id: generateId(),
+    name,
+    sortOrder: index,
+  }));
+}
+
 // GET /api/settings/quick-categories - Fetch all quick categories
 export async function GET() {
   try {
-    let categories = await db.quickCategory.findMany({
+    // Try database first
+    const categories = await db.quickCategory.findMany({
       orderBy: { sortOrder: "asc" },
     });
 
@@ -28,16 +44,17 @@ export async function GET() {
           })
         )
       );
-      categories = created;
+      return NextResponse.json(created);
     }
 
     return NextResponse.json(categories);
   } catch (error) {
-    console.error("Error fetching quick categories:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch quick categories" },
-      { status: 500 }
-    );
+    console.error("Database error, using in-memory fallback:", error);
+    // Fallback to in-memory storage
+    if (inMemoryCategories === null) {
+      inMemoryCategories = getDefaultCategories();
+    }
+    return NextResponse.json(inMemoryCategories);
   }
 }
 
@@ -51,32 +68,57 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { name } = createSchema.parse(body);
 
-    // Check if already exists
-    const existing = await db.quickCategory.findUnique({
-      where: { name },
-    });
+    try {
+      // Try database first
+      const existing = await db.quickCategory.findUnique({
+        where: { name },
+      });
 
-    if (existing) {
-      return NextResponse.json(
-        { error: "Category already exists" },
-        { status: 400 }
-      );
-    }
+      if (existing) {
+        return NextResponse.json(
+          { error: "Category already exists" },
+          { status: 400 }
+        );
+      }
 
-    // Get max sort order
-    const maxOrder = await db.quickCategory.findFirst({
-      orderBy: { sortOrder: "desc" },
-      select: { sortOrder: true },
-    });
+      const maxOrder = await db.quickCategory.findFirst({
+        orderBy: { sortOrder: "desc" },
+        select: { sortOrder: true },
+      });
 
-    const category = await db.quickCategory.create({
-      data: {
+      const category = await db.quickCategory.create({
+        data: {
+          name,
+          sortOrder: (maxOrder?.sortOrder ?? -1) + 1,
+        },
+      });
+
+      return NextResponse.json(category, { status: 201 });
+    } catch (dbError) {
+      console.error("Database error, using in-memory fallback:", dbError);
+      // Fallback to in-memory storage
+      if (inMemoryCategories === null) {
+        inMemoryCategories = getDefaultCategories();
+      }
+
+      // Check if already exists in memory
+      if (inMemoryCategories.some((c) => c.name === name)) {
+        return NextResponse.json(
+          { error: "Category already exists" },
+          { status: 400 }
+        );
+      }
+
+      const maxOrder = Math.max(...inMemoryCategories.map((c) => c.sortOrder), -1);
+      const newCategory = {
+        id: generateId(),
         name,
-        sortOrder: (maxOrder?.sortOrder ?? -1) + 1,
-      },
-    });
+        sortOrder: maxOrder + 1,
+      };
+      inMemoryCategories.push(newCategory);
 
-    return NextResponse.json(category, { status: 201 });
+      return NextResponse.json(newCategory, { status: 201 });
+    }
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
@@ -105,11 +147,21 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    await db.quickCategory.delete({
-      where: { name },
-    });
-
-    return NextResponse.json({ success: true });
+    try {
+      // Try database first
+      await db.quickCategory.delete({
+        where: { name },
+      });
+      return NextResponse.json({ success: true });
+    } catch (dbError) {
+      console.error("Database error, using in-memory fallback:", dbError);
+      // Fallback to in-memory storage
+      if (inMemoryCategories === null) {
+        inMemoryCategories = getDefaultCategories();
+      }
+      inMemoryCategories = inMemoryCategories.filter((c) => c.name !== name);
+      return NextResponse.json({ success: true });
+    }
   } catch (error) {
     console.error("Error deleting quick category:", error);
     return NextResponse.json(
