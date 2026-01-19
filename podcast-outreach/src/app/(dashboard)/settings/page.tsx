@@ -71,7 +71,7 @@ export default function SettingsPage() {
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-slate-900">Settings</h1>
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-slate-700">
           Configure your profile, targeting criteria, and integrations
         </p>
       </div>
@@ -149,7 +149,7 @@ function TabButton({
         "flex items-center gap-2 pb-3 text-sm font-medium border-b-2 -mb-px transition-colors",
         active
           ? "border-blue-600 text-blue-600"
-          : "border-transparent text-slate-500 hover:text-slate-700"
+          : "border-transparent text-slate-700 hover:text-slate-900"
       )}
     >
       <Icon className="h-4 w-4" />
@@ -299,7 +299,7 @@ function PerfectPodcastTab() {
       {!showAddForm ? (
         <button
           onClick={() => setShowAddForm(true)}
-          className="w-full py-3 border-2 border-dashed border-slate-300 rounded-lg text-slate-500 hover:border-blue-400 hover:text-blue-600 transition-colors flex items-center justify-center gap-2"
+          className="w-full py-3 border-2 border-dashed border-slate-300 rounded-lg text-slate-700 hover:border-blue-400 hover:text-blue-600 transition-colors flex items-center justify-center gap-2"
         >
           <Plus className="h-4 w-4" />
           Add Custom Criterion
@@ -316,7 +316,7 @@ function PerfectPodcastTab() {
                 value={newCriterion.name}
                 onChange={(e) => setNewCriterion({ ...newCriterion, name: e.target.value })}
                 placeholder="e.g., Has social media presence"
-                className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder:text-slate-500"
               />
             </div>
             <div>
@@ -324,7 +324,7 @@ function PerfectPodcastTab() {
               <select
                 value={newCriterion.category}
                 onChange={(e) => setNewCriterion({ ...newCriterion, category: e.target.value })}
-                className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder:text-slate-500"
               >
                 {categories.map((cat) => (
                   <option key={cat.id} value={cat.id}>{cat.label}</option>
@@ -340,7 +340,7 @@ function PerfectPodcastTab() {
               value={newCriterion.description}
               onChange={(e) => setNewCriterion({ ...newCriterion, description: e.target.value })}
               placeholder="Brief explanation of what this criterion checks"
-              className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+              className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder:text-slate-500"
             />
           </div>
 
@@ -351,7 +351,7 @@ function PerfectPodcastTab() {
               onChange={(e) => setNewCriterion({ ...newCriterion, promptHint: e.target.value })}
               placeholder="Instructions for how the AI should evaluate this criterion..."
               rows={2}
-              className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+              className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder:text-slate-500"
             />
           </div>
 
@@ -371,7 +371,7 @@ function PerfectPodcastTab() {
               <select
                 value={newCriterion.weight}
                 onChange={(e) => setNewCriterion({ ...newCriterion, weight: parseInt(e.target.value) })}
-                className="border border-slate-300 rounded px-2 py-1 text-sm"
+                className="border border-slate-300 rounded px-2 py-1 text-sm text-slate-900"
               >
                 <option value={1}>Low (1)</option>
                 <option value={2}>Medium-Low (2)</option>
@@ -433,7 +433,7 @@ function CriterionRow({
         <div className="flex items-center gap-2">
           <span className={cn(
             "font-medium",
-            criterion.isEnabled ? "text-slate-900" : "text-slate-400"
+            criterion.isEnabled ? "text-slate-900" : "text-slate-600"
           )}>
             {criterion.name}
           </span>
@@ -451,7 +451,7 @@ function CriterionRow({
         {criterion.description && (
           <p className={cn(
             "text-sm mt-0.5",
-            criterion.isEnabled ? "text-slate-500" : "text-slate-400"
+            criterion.isEnabled ? "text-slate-700" : "text-slate-500"
           )}>
             {criterion.description}
           </p>
@@ -480,7 +480,7 @@ function CriterionRow({
         {criterion.isCustom && (
           <button
             onClick={onDelete}
-            className="p-1 text-slate-400 hover:text-red-600 rounded"
+            className="p-1 text-slate-500 hover:text-red-600 rounded"
             title="Delete"
           >
             <Trash2 className="h-4 w-4" />
@@ -506,7 +506,7 @@ function GuestProfileTab({
     <div className="bg-white border border-slate-200 rounded-lg">
       <div className="px-6 py-4 border-b border-slate-200">
         <h2 className="font-semibold text-slate-900">Your Guest Profile</h2>
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-slate-700">
           This information is used to generate personalized pitch emails
         </p>
       </div>
@@ -519,7 +519,7 @@ function GuestProfileTab({
               value={profile.name}
               onChange={(e) => onChange({ ...profile, name: e.target.value })}
               placeholder="John Smith"
-              className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"
+              className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-900 placeholder:text-slate-500"
             />
           </div>
           <div>
@@ -529,7 +529,7 @@ function GuestProfileTab({
               value={profile.title}
               onChange={(e) => onChange({ ...profile, title: e.target.value })}
               placeholder="CEO & Founder"
-              className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"
+              className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-900 placeholder:text-slate-500"
             />
           </div>
         </div>
@@ -541,7 +541,7 @@ function GuestProfileTab({
             value={profile.company}
             onChange={(e) => onChange({ ...profile, company: e.target.value })}
             placeholder="Acme Inc."
-            className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"
+            className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-900 placeholder:text-slate-500"
           />
         </div>
 
@@ -552,7 +552,7 @@ function GuestProfileTab({
             onChange={(e) => onChange({ ...profile, bio: e.target.value })}
             placeholder="A brief bio about yourself..."
             rows={3}
-            className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"
+            className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-900 placeholder:text-slate-500"
           />
         </div>
 
@@ -563,7 +563,7 @@ function GuestProfileTab({
             value={profile.topics}
             onChange={(e) => onChange({ ...profile, topics: e.target.value })}
             placeholder="Leadership, AI, Startups (comma separated)"
-            className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"
+            className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-900 placeholder:text-slate-500"
           />
         </div>
 
@@ -574,7 +574,7 @@ function GuestProfileTab({
             onChange={(e) => onChange({ ...profile, credentials: e.target.value })}
             placeholder="Notable achievements, previous podcast appearances, publications..."
             rows={2}
-            className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"
+            className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-900 placeholder:text-slate-500"
           />
         </div>
 
@@ -585,7 +585,7 @@ function GuestProfileTab({
             onChange={(e) => onChange({ ...profile, uniqueAngle: e.target.value })}
             placeholder="What makes you different from other guests?"
             rows={2}
-            className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"
+            className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-900 placeholder:text-slate-500"
           />
         </div>
 
@@ -597,7 +597,7 @@ function GuestProfileTab({
               value={profile.websiteUrl}
               onChange={(e) => onChange({ ...profile, websiteUrl: e.target.value })}
               placeholder="https://..."
-              className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"
+              className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-900 placeholder:text-slate-500"
             />
           </div>
           <div>
@@ -607,7 +607,7 @@ function GuestProfileTab({
               value={profile.linkedinUrl}
               onChange={(e) => onChange({ ...profile, linkedinUrl: e.target.value })}
               placeholder="https://linkedin.com/in/..."
-              className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"
+              className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-900 placeholder:text-slate-500"
             />
           </div>
           <div>
@@ -617,7 +617,7 @@ function GuestProfileTab({
               value={profile.twitterUrl}
               onChange={(e) => onChange({ ...profile, twitterUrl: e.target.value })}
               placeholder="https://twitter.com/..."
-              className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"
+              className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-900 placeholder:text-slate-500"
             />
           </div>
         </div>
@@ -649,7 +649,7 @@ function EmailSettingsTab({
     <div className="bg-white border border-slate-200 rounded-lg">
       <div className="px-6 py-4 border-b border-slate-200">
         <h2 className="font-semibold text-slate-900">Email Configuration</h2>
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-slate-700">
           Configure how your outreach emails are sent
         </p>
       </div>
@@ -661,7 +661,7 @@ function EmailSettingsTab({
             value={settings.senderName}
             onChange={(e) => onChange({ ...settings, senderName: e.target.value })}
             placeholder="John from Acme"
-            className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"
+            className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-900 placeholder:text-slate-500"
           />
         </div>
 
@@ -672,7 +672,7 @@ function EmailSettingsTab({
             onChange={(e) => onChange({ ...settings, signature: e.target.value })}
             placeholder="Best regards,&#10;John Smith&#10;CEO, Acme Inc."
             rows={4}
-            className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"
+            className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-900 placeholder:text-slate-500"
           />
         </div>
 
@@ -685,7 +685,7 @@ function EmailSettingsTab({
                 type="number"
                 value={settings.followUp1Days}
                 onChange={(e) => onChange({ ...settings, followUp1Days: parseInt(e.target.value) })}
-                className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"
+                className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-900 placeholder:text-slate-500"
               />
             </div>
             <div>
@@ -694,7 +694,7 @@ function EmailSettingsTab({
                 type="number"
                 value={settings.followUp2Days}
                 onChange={(e) => onChange({ ...settings, followUp2Days: parseInt(e.target.value) })}
-                className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"
+                className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-900 placeholder:text-slate-500"
               />
             </div>
             <div>
@@ -703,7 +703,7 @@ function EmailSettingsTab({
                 type="number"
                 value={settings.followUp3Days}
                 onChange={(e) => onChange({ ...settings, followUp3Days: parseInt(e.target.value) })}
-                className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"
+                className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-900 placeholder:text-slate-500"
               />
             </div>
           </div>
@@ -895,7 +895,7 @@ function IntegrationsTab() {
                   placeholder={integrations?.anthropic?.masked || "sk-ant-..."}
                   value={apiKeys.anthropic || ""}
                   onChange={(e) => setApiKeys((prev) => ({ ...prev, anthropic: e.target.value }))}
-                  className="w-48 border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                  className="w-48 border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder:text-slate-500"
                 />
                 <button
                   onClick={() => saveApiKey("anthropic")}
@@ -928,7 +928,7 @@ function IntegrationsTab() {
                   placeholder={integrations?.openai?.masked || "sk-..."}
                   value={apiKeys.openai || ""}
                   onChange={(e) => setApiKeys((prev) => ({ ...prev, openai: e.target.value }))}
-                  className="w-48 border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                  className="w-48 border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder:text-slate-500"
                 />
                 <button
                   onClick={() => saveApiKey("openai")}
