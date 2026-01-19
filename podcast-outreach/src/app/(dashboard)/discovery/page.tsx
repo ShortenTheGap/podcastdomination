@@ -213,6 +213,7 @@ export default function DiscoveryPage() {
               value={searchType}
               onValueChange={(v: SearchType) => {
                 setSearchType(v);
+                setQuery(""); // Clear search box when switching types
                 setResults([]); // Clear results when switching types
               }}
             >
