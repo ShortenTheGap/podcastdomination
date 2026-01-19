@@ -132,11 +132,12 @@ export default function DiscoveryPage() {
         });
         setResults(data.results.map((r) => ({ ...r, imported: false })));
       } else if (searchType === "seed_guest") {
-        // Seed guest search with optional category
+        // Seed guest search with optional categories (comma-separated)
+        const categories = seedCategory.split(",").map((c) => c.trim()).filter(Boolean).join(", ");
         const data = await discovery.mutateAsync({
           type: "seed_guest",
           query,
-          category: seedCategory.trim() || undefined,
+          category: categories || undefined,
           limit: 20,
         });
         setResults(data.results.map((r) => ({ ...r, imported: false })));
@@ -265,26 +266,22 @@ export default function DiscoveryPage() {
               </SelectContent>
             </Select>
 
-            {/* Seed Guest: Two inputs - guest name and category */}
+            {/* Seed Guest: Two inputs - guest name and categories (stacked) */}
             {searchType === "seed_guest" && (
-              <>
-                <div className="flex-1 min-w-[180px]">
-                  <Input
-                    placeholder="Guest name (e.g., Gary Vaynerchuk)..."
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                  />
-                </div>
-                <div className="w-[180px]">
-                  <Input
-                    placeholder="Category (e.g., fitness)..."
-                    value={seedCategory}
-                    onChange={(e) => setSeedCategory(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                  />
-                </div>
-              </>
+              <div className="flex-1 min-w-[200px] space-y-2">
+                <Input
+                  placeholder="Guest name (e.g., Gary Vaynerchuk)..."
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                />
+                <Input
+                  placeholder="Categories (e.g., fitness, health, business)..."
+                  value={seedCategory}
+                  onChange={(e) => setSeedCategory(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                />
+              </div>
             )}
 
             {/* Other search types: Single input */}
@@ -405,7 +402,7 @@ export default function DiscoveryPage() {
             <div className="mt-4">
               <div className="p-3 bg-blue-50 rounded-lg border border-blue-200 mb-3">
                 <p className="text-sm text-blue-700">
-                  <strong>Seed Guest Search:</strong> Enter a guest name and optionally a podcast category to find shows where similar experts have appeared.
+                  <strong>Seed Guest Search:</strong> Enter a guest name and optionally podcast categories to find shows where similar experts have appeared.
                 </p>
               </div>
               <div className="flex items-center justify-between mb-2">
@@ -420,30 +417,41 @@ export default function DiscoveryPage() {
                 </Button>
               </div>
               <div className="flex flex-wrap gap-2">
-                {quickCategories.map((cat) => (
-                  <div key={cat.id} className="relative group">
-                    <Button
-                      variant={seedCategory === cat.name ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => {
-                        if (!editingCategories) {
-                          setSeedCategory(seedCategory === cat.name ? "" : cat.name);
-                        }
-                      }}
-                      className={editingCategories ? "pr-8" : ""}
-                    >
-                      {cat.name}
-                    </Button>
-                    {editingCategories && (
-                      <button
-                        onClick={() => handleDeleteCategory(cat.name)}
-                        className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5 hover:bg-red-600"
+                {quickCategories.map((cat) => {
+                  const currentCategories = seedCategory.split(",").map((c) => c.trim()).filter(Boolean);
+                  const isSelected = currentCategories.includes(cat.name);
+                  return (
+                    <div key={cat.id} className="relative group">
+                      <Button
+                        variant={isSelected ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => {
+                          if (!editingCategories) {
+                            if (isSelected) {
+                              // Remove from list
+                              const updated = currentCategories.filter((c) => c !== cat.name);
+                              setSeedCategory(updated.join(", "));
+                            } else {
+                              // Add to list
+                              setSeedCategory(currentCategories.length > 0 ? `${seedCategory}, ${cat.name}` : cat.name);
+                            }
+                          }
+                        }}
+                        className={editingCategories ? "pr-8" : ""}
                       >
-                        <X className="h-3 w-3" />
-                      </button>
-                    )}
-                  </div>
-                ))}
+                        {cat.name}
+                      </Button>
+                      {editingCategories && (
+                        <button
+                          onClick={() => handleDeleteCategory(cat.name)}
+                          className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5 hover:bg-red-600"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
                 {editingCategories && (
                   <div className="flex items-center gap-1">
                     <Input
@@ -470,7 +478,7 @@ export default function DiscoveryPage() {
                 )}
               </div>
               <p className="text-xs text-gray-400 mt-1">
-                Click a category to filter podcast results, or leave empty to search all podcasts.
+                Click categories to add/remove them. Use commas to enter multiple categories manually.
               </p>
             </div>
           )}
