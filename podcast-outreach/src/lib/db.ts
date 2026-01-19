@@ -62,5 +62,11 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 export const db: any = globalForPrisma.prisma ?? createPrismaClient();
+export const prisma = db; // Alias for compatibility
 
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = db;
+
+// Helper to check if Prisma is available (not in build phase)
+export function isPrismaAvailable(): boolean {
+  return process.env.NEXT_PHASE !== "phase-production-build";
+}

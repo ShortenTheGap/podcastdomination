@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Search,
-  FileEdit,
+  Mail,
   BarChart3,
   Settings,
   Mic2,
@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 const navigation = [
   { name: "Discovery", href: "/discovery", icon: Search },
   { name: "Pipeline", href: "/", icon: LayoutDashboard },
-  { name: "Drafts", href: "/drafts", icon: FileEdit },
+  { name: "Outreach", href: "/outreach", icon: Mail },
   { name: "Analytics", href: "/analytics", icon: BarChart3 },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
