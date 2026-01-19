@@ -277,13 +277,13 @@ export function useRecommendations() {
   return useMutation<
     { results: DiscoveryResult[]; count: number; type: string },
     Error,
-    { type: "best_match" | "momentum"; limit?: number }
+    { type: "best_match" | "momentum"; limit?: number; searchTerms?: string[] }
   >({
-    mutationFn: async ({ type, limit = 10 }) => {
+    mutationFn: async ({ type, limit = 10, searchTerms }) => {
       const res = await fetch("/api/discovery/recommendations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type, limit }),
+        body: JSON.stringify({ type, limit, searchTerms }),
       });
       if (!res.ok) throw new Error("Failed to fetch recommendations");
       return res.json();

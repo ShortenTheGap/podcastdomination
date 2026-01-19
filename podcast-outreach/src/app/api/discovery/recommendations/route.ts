@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 const requestSchema = z.object({
   type: z.enum(["best_match", "momentum"]),
   limit: z.number().default(10),
+  searchTerms: z.array(z.string()).optional(),
 });
 
 interface ApplePodcastResult {
@@ -273,23 +274,28 @@ function calculateMomentumScore(podcast: MappedPodcast): number {
   return Math.min(100, score);
 }
 
-// Best Match: Search using criteria-derived keywords
-async function getBestMatchPodcasts(limit: number): Promise<MappedPodcast[]> {
+// Best Match: Search using user-provided or default keywords
+async function getBestMatchPodcasts(
+  limit: number,
+  customSearchTerms?: string[]
+): Promise<MappedPodcast[]> {
   // Fetch Perfect Podcast criteria
   const criteria = await db.podcastCriteria.findMany({
     where: { isEnabled: true },
     orderBy: { sortOrder: "asc" },
   });
 
-  // Search terms relevant to the guest profile (fitness, nutrition, health)
-  // These could be dynamically generated based on criteria in the future
-  const searchTerms = [
-    "fitness podcast interview",
-    "health wellness podcast",
-    "nutrition science podcast",
-    "personal development podcast",
-    "entrepreneurship fitness",
-  ];
+  // Use custom search terms if provided, otherwise use defaults
+  const searchTerms =
+    customSearchTerms && customSearchTerms.length > 0
+      ? customSearchTerms.map((term) => `${term} podcast`)
+      : [
+          "fitness podcast interview",
+          "health wellness podcast",
+          "nutrition science podcast",
+          "personal development podcast",
+          "entrepreneurship fitness",
+        ];
 
   // Collect results from multiple searches
   const allResults: MappedPodcast[] = [];
@@ -324,15 +330,21 @@ async function getBestMatchPodcasts(limit: number): Promise<MappedPodcast[]> {
 }
 
 // Momentum: Search for rising/active podcasts
-async function getMomentumPodcasts(limit: number): Promise<MappedPodcast[]> {
-  // Search terms for trending/rising podcasts in relevant categories
-  const searchTerms = [
-    "trending health podcast",
-    "new fitness podcast 2024",
-    "popular wellness podcast",
-    "top business podcast interview",
-    "rising self improvement podcast",
-  ];
+async function getMomentumPodcasts(
+  limit: number,
+  customSearchTerms?: string[]
+): Promise<MappedPodcast[]> {
+  // Use custom search terms if provided, otherwise use defaults
+  const searchTerms =
+    customSearchTerms && customSearchTerms.length > 0
+      ? customSearchTerms.map((term) => `trending ${term} podcast`)
+      : [
+          "trending health podcast",
+          "new fitness podcast 2024",
+          "popular wellness podcast",
+          "top business podcast interview",
+          "rising self improvement podcast",
+        ];
 
   const allResults: MappedPodcast[] = [];
   const seenIds = new Set<string>();
@@ -367,14 +379,14 @@ async function getMomentumPodcasts(limit: number): Promise<MappedPodcast[]> {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { type, limit } = requestSchema.parse(body);
+    const { type, limit, searchTerms } = requestSchema.parse(body);
 
     let results: MappedPodcast[];
 
     if (type === "best_match") {
-      results = await getBestMatchPodcasts(limit);
+      results = await getBestMatchPodcasts(limit, searchTerms);
     } else {
-      results = await getMomentumPodcasts(limit);
+      results = await getMomentumPodcasts(limit, searchTerms);
     }
 
     return NextResponse.json({

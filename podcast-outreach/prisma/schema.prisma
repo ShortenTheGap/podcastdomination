@@ -183,6 +183,14 @@ model SystemConfig {
   updatedAt             DateTime  @updatedAt
 }
 
+// Quick Categories - customizable search shortcuts for Discovery page
+model QuickCategory {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+}
+
 // Perfect Podcast Criteria - defines what makes an ideal podcast target
 model PodcastCriteria {
   id          String    @id @default(cuid())

@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useDiscovery, useImportPodcast, useRecommendations } from "@/hooks/use-podcasts";
-import { PODCAST_CATEGORIES, SEED_CATEGORY_CONFIG } from "@/lib/constants";
+import { SEED_CATEGORY_CONFIG } from "@/lib/constants";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,10 +16,16 @@ import {
   SelectGroup,
   SelectLabel,
 } from "@/components/ui/select";
-import { Search, Plus, Loader2, ExternalLink, Check, Users, Folder, AlertCircle, X, Mic, Calendar, Tag, Sparkles, TrendingUp, Star } from "lucide-react";
+import { Search, Plus, Loader2, ExternalLink, Check, Users, Folder, AlertCircle, X, Mic, Calendar, Tag, Sparkles, TrendingUp, Star, Trash2 } from "lucide-react";
 import type { DiscoveryResult } from "@/types";
 
 type SearchType = "seed_guest" | "category" | "best_match" | "momentum";
+
+interface QuickCategory {
+  id: string;
+  name: string;
+  sortOrder: number;
+}
 
 interface ResultWithStatus extends DiscoveryResult {
   imported?: boolean;
@@ -33,6 +39,12 @@ export default function DiscoveryPage() {
   const [results, setResults] = useState<ResultWithStatus[]>([]);
   const [notification, setNotification] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
+  // Quick categories state
+  const [quickCategories, setQuickCategories] = useState<QuickCategory[]>([]);
+  const [newCategory, setNewCategory] = useState("");
+  const [isAddingCategory, setIsAddingCategory] = useState(false);
+  const [editingCategories, setEditingCategories] = useState(false);
+
   const discovery = useDiscovery();
   const recommendations = useRecommendations();
   const importPodcast = useImportPodcast();
@@ -40,20 +52,78 @@ export default function DiscoveryPage() {
   const isRecommendationType = searchType === "best_match" || searchType === "momentum";
   const isLoading = discovery.isPending || recommendations.isPending;
 
+  // Fetch quick categories on mount
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const res = await fetch("/api/settings/quick-categories");
+        if (res.ok) {
+          const data = await res.json();
+          setQuickCategories(data);
+        }
+      } catch (error) {
+        console.error("Failed to fetch quick categories:", error);
+      }
+    };
+    fetchCategories();
+  }, []);
+
   const showNotification = (type: "success" | "error", message: string) => {
     setNotification({ type, message });
     setTimeout(() => setNotification(null), 5000);
   };
 
+  const handleAddCategory = async () => {
+    if (!newCategory.trim()) return;
+    setIsAddingCategory(true);
+    try {
+      const res = await fetch("/api/settings/quick-categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newCategory.trim() }),
+      });
+      if (res.ok) {
+        const category = await res.json();
+        setQuickCategories((prev) => [...prev, category]);
+        setNewCategory("");
+        showNotification("success", `Added "${category.name}" to quick categories`);
+      } else {
+        const error = await res.json();
+        showNotification("error", error.error || "Failed to add category");
+      }
+    } catch (error) {
+      showNotification("error", "Failed to add category");
+    } finally {
+      setIsAddingCategory(false);
+    }
+  };
+
+  const handleDeleteCategory = async (name: string) => {
+    try {
+      const res = await fetch(`/api/settings/quick-categories?name=${encodeURIComponent(name)}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        setQuickCategories((prev) => prev.filter((c) => c.name !== name));
+        showNotification("success", `Removed "${name}" from quick categories`);
+      }
+    } catch (error) {
+      showNotification("error", "Failed to delete category");
+    }
+  };
+
   const handleSearch = async () => {
-    // For recommendations, no query is needed
-    if (!isRecommendationType && !query) return;
+    // All search types now use query
+    if (!query.trim()) return;
 
     try {
       if (isRecommendationType) {
+        // Parse comma-separated topics for recommendations
+        const searchTerms = query.split(",").map((t) => t.trim()).filter(Boolean);
         const data = await recommendations.mutateAsync({
           type: searchType as "best_match" | "momentum",
           limit: 10,
+          searchTerms,
         });
         setResults(data.results.map((r) => ({ ...r, imported: false })));
       } else {
@@ -178,36 +248,27 @@ export default function DiscoveryPage() {
               </SelectContent>
             </Select>
 
-            {/* Query input - only show for manual searches */}
-            {!isRecommendationType && (
-              <div className="flex-1 min-w-[200px]">
-                <Input
-                  placeholder={
-                    searchType === "seed_guest"
-                      ? "Enter seed guest name (e.g., Gary Vaynerchuk)..."
-                      : "Enter category (e.g., fitness, health, business)..."
-                  }
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                />
-              </div>
-            )}
-
-            {/* Recommendation type description */}
-            {isRecommendationType && (
-              <div className="flex-1 min-w-[200px] flex items-center">
-                <p className="text-sm text-gray-500">
-                  {searchType === "best_match"
-                    ? "Podcasts matching your Perfect Podcast criteria"
-                    : "Rising podcasts with growing momentum"}
-                </p>
-              </div>
-            )}
+            {/* Query input - show for all search types */}
+            <div className="flex-1 min-w-[200px]">
+              <Input
+                placeholder={
+                  searchType === "seed_guest"
+                    ? "Enter seed guest name (e.g., Gary Vaynerchuk)..."
+                    : searchType === "category"
+                    ? "Enter category (e.g., fitness, health, business)..."
+                    : searchType === "best_match"
+                    ? "Enter topics (e.g., fitness, nutrition, wellness)..."
+                    : "Enter topics (e.g., health, business, parenting)..."
+                }
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+              />
+            </div>
 
             <Button
               onClick={handleSearch}
-              disabled={isLoading || (!isRecommendationType && !query)}
+              disabled={isLoading || !query.trim()}
             >
               {isLoading ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -220,23 +281,83 @@ export default function DiscoveryPage() {
             </Button>
           </div>
 
-          {/* Quick category buttons */}
-          {searchType === "category" && (
-            <div className="flex flex-wrap gap-2 mt-4">
-              <span className="text-sm text-gray-500 mr-2">Quick:</span>
-              {PODCAST_CATEGORIES.slice(0, 5).map((cat) => (
+          {/* Quick category buttons - shown for category, best_match, and momentum */}
+          {(searchType === "category" || isRecommendationType) && (
+            <div className="mt-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-gray-500">Quick Topics:</span>
                 <Button
-                  key={cat}
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
-                  onClick={() => {
-                    setQuery(cat);
-                    setSearchType("category");
-                  }}
+                  onClick={() => setEditingCategories(!editingCategories)}
+                  className="text-xs"
                 >
-                  {cat}
+                  {editingCategories ? "Done" : "Edit"}
                 </Button>
-              ))}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {quickCategories.map((cat) => (
+                  <div key={cat.id} className="relative group">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        if (!editingCategories) {
+                          if (isRecommendationType) {
+                            // For recommendations, append to query
+                            const current = query.split(",").map((t) => t.trim()).filter(Boolean);
+                            if (!current.includes(cat.name)) {
+                              setQuery(current.length > 0 ? `${query}, ${cat.name}` : cat.name);
+                            }
+                          } else {
+                            setQuery(cat.name);
+                          }
+                        }
+                      }}
+                      className={editingCategories ? "pr-8" : ""}
+                    >
+                      {cat.name}
+                    </Button>
+                    {editingCategories && (
+                      <button
+                        onClick={() => handleDeleteCategory(cat.name)}
+                        className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5 hover:bg-red-600"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {editingCategories && (
+                  <div className="flex items-center gap-1">
+                    <Input
+                      placeholder="New category..."
+                      value={newCategory}
+                      onChange={(e) => setNewCategory(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && handleAddCategory()}
+                      className="h-8 w-32 text-sm"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleAddCategory}
+                      disabled={isAddingCategory || !newCategory.trim()}
+                      className="h-8"
+                    >
+                      {isAddingCategory ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Plus className="h-3 w-3" />
+                      )}
+                    </Button>
+                  </div>
+                )}
+              </div>
+              {isRecommendationType && !editingCategories && (
+                <p className="text-xs text-gray-400 mt-1">
+                  Click topics to add them to your search. Separate multiple topics with commas.
+                </p>
+              )}
             </div>
           )}
 
@@ -261,11 +382,11 @@ export default function DiscoveryPage() {
           {searchType === "best_match" && (
             <div className="mt-4 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
               <p className="text-sm text-yellow-800">
-                <strong>Top 10 Best Match:</strong> Podcasts that best match your Perfect Podcast criteria.
-                These are evaluated based on topic alignment, audience fit, and your custom requirements.
+                <strong>Top 10 Best Match:</strong> Enter topics to search for podcasts that match your Perfect Podcast criteria.
+                Results are scored based on topic alignment, audience fit, and your custom requirements.
               </p>
               <p className="text-xs text-yellow-600 mt-1">
-                Configure your criteria in Settings &rarr; Perfect Podcast
+                Tip: Use commas to search multiple topics (e.g., "fitness, nutrition, wellness")
               </p>
             </div>
           )}
@@ -274,11 +395,11 @@ export default function DiscoveryPage() {
           {searchType === "momentum" && (
             <div className="mt-4 p-3 bg-green-50 rounded-lg border border-green-200">
               <p className="text-sm text-green-800">
-                <strong>Top 10 Momentum:</strong> Rising podcasts showing strong growth signals.
-                These shows have recent activity, consistent publishing, and growing audiences.
+                <strong>Top 10 Momentum:</strong> Enter topics to find rising podcasts with strong growth signals.
+                Shows with recent activity and consistent publishing score higher.
               </p>
               <p className="text-xs text-green-600 mt-1">
-                Great for getting in early with shows on the rise
+                Tip: Use commas to search multiple topics (e.g., "health, business, parenting")
               </p>
             </div>
           )}
@@ -478,29 +599,25 @@ export default function DiscoveryPage() {
 
       {results.length === 0 && !isLoading && (
         <div className="text-center py-12">
-          {isRecommendationType ? (
+          {searchType === "best_match" ? (
             <>
-              {searchType === "best_match" ? (
-                <>
-                  <Star className="h-12 w-12 mx-auto text-yellow-300 mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">
-                    Get Your Best Matches
-                  </h3>
-                  <p className="text-gray-500">
-                    Click "Get Recommendations" to find podcasts that match your Perfect Podcast criteria
-                  </p>
-                </>
-              ) : (
-                <>
-                  <TrendingUp className="h-12 w-12 mx-auto text-green-300 mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">
-                    Discover Rising Podcasts
-                  </h3>
-                  <p className="text-gray-500">
-                    Click "Get Recommendations" to find podcasts with growing momentum
-                  </p>
-                </>
-              )}
+              <Star className="h-12 w-12 mx-auto text-yellow-300 mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                Get Your Best Matches
+              </h3>
+              <p className="text-gray-500">
+                Enter topics above and click "Get Recommendations" to find podcasts that match your criteria
+              </p>
+            </>
+          ) : searchType === "momentum" ? (
+            <>
+              <TrendingUp className="h-12 w-12 mx-auto text-green-300 mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                Discover Rising Podcasts
+              </h3>
+              <p className="text-gray-500">
+                Enter topics above and click "Get Recommendations" to find podcasts with growing momentum
+              </p>
             </>
           ) : (
             <>
