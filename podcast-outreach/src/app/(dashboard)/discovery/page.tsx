@@ -84,7 +84,12 @@ export default function DiscoveryPage() {
       });
       if (res.ok) {
         const category = await res.json();
-        setQuickCategories((prev) => [...prev, category]);
+        // Refetch all categories to ensure state is in sync
+        const refreshRes = await fetch("/api/settings/quick-categories");
+        if (refreshRes.ok) {
+          const refreshedCategories = await refreshRes.json();
+          setQuickCategories(refreshedCategories);
+        }
         setNewCategory("");
         showNotification("success", `Added "${category.name}" to quick categories`);
       } else {
