@@ -1,10 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
+import { integrationSettings } from "../route";
 
 interface TestResult {
   success: boolean;
   message: string;
   details?: Record<string, unknown>;
+}
+
+// Helper to get API key (provided > saved > env var)
+function resolveApiKey(integration: string, providedKey?: string): string | undefined {
+  if (providedKey) return providedKey;
+  if (integrationSettings[integration]?.apiKey) return integrationSettings[integration].apiKey;
+
+  switch (integration) {
+    case "anthropic":
+      return process.env.ANTHROPIC_API_KEY;
+    case "openai":
+      return process.env.OPENAI_API_KEY;
+    case "listennotes":
+      return process.env.LISTEN_NOTES_API_KEY;
+    default:
+      return undefined;
+  }
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse<TestResult>> {
@@ -13,10 +31,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<TestResul
 
     switch (integration) {
       case "anthropic":
-        return NextResponse.json(await testAnthropic(apiKey || process.env.ANTHROPIC_API_KEY));
+        return NextResponse.json(await testAnthropic(resolveApiKey("anthropic", apiKey)));
 
       case "openai":
-        return NextResponse.json(await testOpenAI(apiKey || process.env.OPENAI_API_KEY));
+        return NextResponse.json(await testOpenAI(resolveApiKey("openai", apiKey)));
 
       case "spotify":
         return NextResponse.json(await testSpotify());
@@ -25,7 +43,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<TestResul
         return NextResponse.json(await testPodcastIndex());
 
       case "listennotes":
-        return NextResponse.json(await testListenNotes(apiKey || process.env.LISTEN_NOTES_API_KEY));
+        return NextResponse.json(await testListenNotes(resolveApiKey("listennotes", apiKey)));
 
       case "apple":
         return NextResponse.json(await testApplePodcasts());

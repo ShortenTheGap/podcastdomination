@@ -844,16 +844,58 @@ function IntegrationsTab() {
     const key = apiKeys[integration];
     if (!key) return;
 
-    // Test the key first
-    await testConnection(integration);
+    setTestingIntegration(integration);
 
-    // If test passed, mark as saved
-    if (testResults[integration]?.success) {
+    try {
+      // First test the key
+      const testRes = await fetch("/api/integrations/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ integration, apiKey: key }),
+      });
+      const testResult = await testRes.json();
+
+      if (testResult.success) {
+        // Save the key to the backend
+        const saveRes = await fetch("/api/integrations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            integration,
+            action: "save_key",
+            config: { apiKey: key }
+          }),
+        });
+
+        if (saveRes.ok) {
+          setTestResults((prev) => ({
+            ...prev,
+            [integration]: { success: true, message: "API key saved and verified!" },
+          }));
+          // Clear the input after successful save
+          setApiKeys((prev) => ({ ...prev, [integration]: "" }));
+          // Refresh integration status
+          queryClient.invalidateQueries({ queryKey: ["integrations"] });
+        } else {
+          setTestResults((prev) => ({
+            ...prev,
+            [integration]: { success: false, message: "Failed to save API key" },
+          }));
+        }
+      } else {
+        setTestResults((prev) => ({
+          ...prev,
+          [integration]: { success: false, message: testResult.message || "Invalid API key" },
+        }));
+      }
+    } catch (error) {
       setTestResults((prev) => ({
         ...prev,
-        [integration]: { success: true, message: "API key saved and verified" },
+        [integration]: { success: false, message: "Error saving API key" },
       }));
     }
+
+    setTestingIntegration(null);
   };
 
   if (isLoading) {
