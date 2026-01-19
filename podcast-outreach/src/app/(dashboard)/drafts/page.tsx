@@ -93,7 +93,7 @@ export default function DraftsPage() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Email Drafts</h1>
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-gray-700">
           Review and edit AI-generated email drafts before sending
         </p>
       </div>
@@ -117,15 +117,15 @@ export default function DraftsPage() {
         <TabsContent value="drafts" className="mt-6">
           <div className="grid gap-4">
             {isLoading ? (
-              <div className="text-center py-8 text-gray-500">Loading...</div>
+              <div className="text-center py-8 text-gray-700">Loading...</div>
             ) : draftedEmails.length === 0 ? (
               <Card>
                 <CardContent className="py-12 text-center">
-                  <Sparkles className="h-12 w-12 mx-auto text-gray-300 mb-4" />
+                  <Sparkles className="h-12 w-12 mx-auto text-gray-500 mb-4" />
                   <h3 className="text-lg font-medium text-gray-900 mb-2">
                     No drafts pending QA
                   </h3>
-                  <p className="text-gray-500">
+                  <p className="text-gray-700">
                     Generate email drafts from the Pipeline page
                   </p>
                 </CardContent>
@@ -150,11 +150,11 @@ export default function DraftsPage() {
             {approvedEmails.length === 0 ? (
               <Card>
                 <CardContent className="py-12 text-center">
-                  <Mail className="h-12 w-12 mx-auto text-gray-300 mb-4" />
+                  <Mail className="h-12 w-12 mx-auto text-gray-500 mb-4" />
                   <h3 className="text-lg font-medium text-gray-900 mb-2">
                     No emails ready to send
                   </h3>
-                  <p className="text-gray-500">
+                  <p className="text-gray-700">
                     Approve drafts to move them here
                   </p>
                 </CardContent>
@@ -244,7 +244,7 @@ function DraftCard({
         <div className="flex items-start justify-between">
           <div>
             <CardTitle className="text-base">{draft.showName}</CardTitle>
-            <p className="text-sm text-gray-500 mt-1">
+            <p className="text-sm text-gray-700 mt-1">
               To: {draft.primaryEmail || "No email"}
             </p>
             {draft.tier && (
@@ -309,7 +309,7 @@ function DraftCard({
                   <label
                     htmlFor={item.id}
                     className={`text-sm ${
-                      item.required ? "text-gray-900" : "text-gray-500"
+                      item.required ? "text-gray-900" : "text-gray-700"
                     }`}
                   >
                     {item.label}

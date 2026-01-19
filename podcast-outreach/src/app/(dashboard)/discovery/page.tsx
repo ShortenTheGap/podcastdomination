@@ -211,7 +211,7 @@ export default function DiscoveryPage() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Discovery</h1>
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-gray-700">
           Find new podcasts to pitch for guest appearances
         </p>
       </div>
@@ -321,7 +321,7 @@ export default function DiscoveryPage() {
           {(searchType === "category" || isRecommendationType) && (
             <div className="mt-4">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-gray-500">Quick Topics:</span>
+                <span className="text-sm text-gray-700">Quick Topics:</span>
                 <Button
                   variant="ghost"
                   size="sm"
@@ -390,7 +390,7 @@ export default function DiscoveryPage() {
                 )}
               </div>
               {isRecommendationType && !editingCategories && (
-                <p className="text-xs text-gray-400 mt-1">
+                <p className="text-xs text-gray-600 mt-1">
                   Click topics to add them to your search. Separate multiple topics with commas.
                 </p>
               )}
@@ -406,7 +406,7 @@ export default function DiscoveryPage() {
                 </p>
               </div>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-gray-500">Quick Categories:</span>
+                <span className="text-sm text-gray-700">Quick Categories:</span>
                 <Button
                   variant="ghost"
                   size="sm"
@@ -477,7 +477,7 @@ export default function DiscoveryPage() {
                   </div>
                 )}
               </div>
-              <p className="text-xs text-gray-400 mt-1">
+              <p className="text-xs text-gray-600 mt-1">
                 Click categories to add/remove them. Use commas to enter multiple categories manually.
               </p>
             </div>
@@ -514,7 +514,7 @@ export default function DiscoveryPage() {
       {/* Results Count */}
       {results.length > 0 && (
         <div className="flex items-center justify-between">
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-gray-700">
             {isRecommendationType ? (
               <>
                 {searchType === "best_match" ? (
@@ -550,7 +550,7 @@ export default function DiscoveryPage() {
                 />
               ) : (
                 <div className="w-20 h-20 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
-                  <Mic className="h-8 w-8 text-gray-300" />
+                  <Mic className="h-8 w-8 text-gray-500" />
                 </div>
               )}
               <div className="flex-1 min-w-0">
@@ -558,14 +558,14 @@ export default function DiscoveryPage() {
                   {podcast.showName}
                 </h3>
                 {podcast.hostName && (
-                  <p className="text-sm text-gray-500 mt-1 line-clamp-1">
+                  <p className="text-sm text-gray-700 mt-1 line-clamp-1">
                     {podcast.hostName}
                   </p>
                 )}
                 {podcast.genre && (
                   <div className="flex items-center gap-1 mt-1">
-                    <Tag className="h-3 w-3 text-gray-400" />
-                    <span className="text-xs text-gray-500">{podcast.genre}</span>
+                    <Tag className="h-3 w-3 text-gray-600" />
+                    <span className="text-xs text-gray-700">{podcast.genre}</span>
                   </div>
                 )}
               </div>
@@ -632,7 +632,7 @@ export default function DiscoveryPage() {
               {/* Recent Guests */}
               {podcast.recentGuests.length > 0 && (
                 <div className="mb-3">
-                  <p className="text-xs text-gray-400 mb-1">Recent guests:</p>
+                  <p className="text-xs text-gray-600 mb-1">Recent guests:</p>
                   <div className="flex flex-wrap gap-1">
                     {podcast.recentGuests.slice(0, 3).map((guest, i) => (
                       <Badge key={i} variant="outline" className="text-xs">
@@ -645,7 +645,7 @@ export default function DiscoveryPage() {
 
               {/* Actions */}
               <div className="flex items-center justify-between pt-2 border-t">
-                <span className="text-xs text-gray-400">
+                <span className="text-xs text-gray-600">
                   {podcast.discoverySource}
                 </span>
 
@@ -710,7 +710,7 @@ export default function DiscoveryPage() {
               <h3 className="text-lg font-medium text-gray-900 mb-2">
                 Get Your Best Matches
               </h3>
-              <p className="text-gray-500">
+              <p className="text-gray-700">
                 Enter topics above and click "Get Recommendations" to find podcasts that match your criteria
               </p>
             </>
@@ -720,17 +720,17 @@ export default function DiscoveryPage() {
               <h3 className="text-lg font-medium text-gray-900 mb-2">
                 Discover Rising Podcasts
               </h3>
-              <p className="text-gray-500">
+              <p className="text-gray-700">
                 Enter topics above and click "Get Recommendations" to find podcasts with growing momentum
               </p>
             </>
           ) : (
             <>
-              <Search className="h-12 w-12 mx-auto text-gray-300 mb-4" />
+              <Search className="h-12 w-12 mx-auto text-gray-500 mb-4" />
               <h3 className="text-lg font-medium text-gray-900 mb-2">
                 Search for podcasts
               </h3>
-              <p className="text-gray-500">
+              <p className="text-gray-700">
                 {searchType === "seed_guest"
                   ? "Enter a seed guest name to find podcasts they've appeared on"
                   : "Enter a category or topic to find relevant podcasts"}

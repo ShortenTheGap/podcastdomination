@@ -52,7 +52,7 @@ export default function AnalyticsPage() {
   const getTrendIcon = (current: number, previous: number) => {
     if (current > previous) return <TrendingUp className="h-4 w-4 text-green-500" />;
     if (current < previous) return <TrendingDown className="h-4 w-4 text-red-500" />;
-    return <Minus className="h-4 w-4 text-gray-400" />;
+    return <Minus className="h-4 w-4 text-gray-600" />;
   };
 
   return (
@@ -60,7 +60,7 @@ export default function AnalyticsPage() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Analytics</h1>
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-gray-700">
           Track your outreach performance and conversion rates
         </p>
       </div>
@@ -69,30 +69,30 @@ export default function AnalyticsPage() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-500">
+            <CardTitle className="text-sm font-medium text-gray-700">
               Emails Sent
             </CardTitle>
-            <Send className="h-4 w-4 text-gray-400" />
+            <Send className="h-4 w-4 text-gray-600" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats?.sent || 0}</div>
-            <p className="text-xs text-gray-500">This month</p>
+            <p className="text-xs text-gray-700">This month</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-500">
+            <CardTitle className="text-sm font-medium text-gray-700">
               Open Rate
             </CardTitle>
-            <Mail className="h-4 w-4 text-gray-400" />
+            <Mail className="h-4 w-4 text-gray-600" />
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-2">
               <div className="text-2xl font-bold">{stats?.openRate || 0}%</div>
               {stats && getTrendIcon(stats.openRate, stats.previousOpenRate)}
             </div>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-gray-700">
               {stats?.opened || 0} of {stats?.sent || 0} opened
             </p>
           </CardContent>
@@ -100,17 +100,17 @@ export default function AnalyticsPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-500">
+            <CardTitle className="text-sm font-medium text-gray-700">
               Reply Rate
             </CardTitle>
-            <MessageSquare className="h-4 w-4 text-gray-400" />
+            <MessageSquare className="h-4 w-4 text-gray-600" />
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-2">
               <div className="text-2xl font-bold">{stats?.replyRate || 0}%</div>
               {stats && getTrendIcon(stats.replyRate, stats.previousReplyRate)}
             </div>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-gray-700">
               {stats?.replied || 0} replies received
             </p>
           </CardContent>
@@ -118,17 +118,17 @@ export default function AnalyticsPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-500">
+            <CardTitle className="text-sm font-medium text-gray-700">
               Bookings
             </CardTitle>
-            <Calendar className="h-4 w-4 text-gray-400" />
+            <Calendar className="h-4 w-4 text-gray-600" />
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-2">
               <div className="text-2xl font-bold">{stats?.booked || 0}</div>
               {stats && getTrendIcon(stats.bookingRate, stats.previousBookingRate)}
             </div>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-gray-700">
               {stats?.bookingRate || 0}% conversion rate
             </p>
           </CardContent>
@@ -145,7 +145,7 @@ export default function AnalyticsPage() {
             <div className="space-y-4">
               {stats?.weeklyData.map((week) => (
                 <div key={week.week} className="flex items-center gap-4">
-                  <div className="w-20 text-sm text-gray-500">{week.week}</div>
+                  <div className="w-20 text-sm text-gray-700">{week.week}</div>
                   <div className="flex-1">
                     <div className="flex gap-1 h-6">
                       <div
@@ -165,7 +165,7 @@ export default function AnalyticsPage() {
                       />
                     </div>
                   </div>
-                  <div className="text-sm text-gray-500 w-24 text-right">
+                  <div className="text-sm text-gray-700 w-24 text-right">
                     {week.sent} sent
                   </div>
                 </div>
@@ -202,7 +202,7 @@ export default function AnalyticsPage() {
                     className="flex items-center justify-between"
                   >
                     <div className="flex items-center gap-3">
-                      <span className="text-sm font-medium text-gray-400">
+                      <span className="text-sm font-medium text-gray-600">
                         {i + 1}
                       </span>
                       <span className="text-sm font-medium">{podcast.name}</span>
@@ -231,9 +231,9 @@ export default function AnalyticsPage() {
                   >
                     <div>
                       <span className="font-medium">{activity.podcast}</span>
-                      <span className="text-gray-500"> - {activity.action}</span>
+                      <span className="text-gray-700"> - {activity.action}</span>
                     </div>
-                    <span className="text-gray-400">{activity.date}</span>
+                    <span className="text-gray-600">{activity.date}</span>
                   </div>
                 ))}
               </div>

@@ -43,7 +43,7 @@ export default function LoginPage() {
             <div>
               <label className="text-sm font-medium text-gray-700">Email</label>
               <div className="relative mt-1">
-                <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-600" />
                 <Input
                   type="email"
                   value={email}
@@ -60,7 +60,7 @@ export default function LoginPage() {
                 Password
               </label>
               <div className="relative mt-1">
-                <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-600" />
                 <Input
                   type="password"
                   value={password}
@@ -77,7 +77,7 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          <div className="mt-6 text-center text-sm text-gray-500">
+          <div className="mt-6 text-center text-sm text-gray-700">
             <p>Demo credentials: any email/password works</p>
           </div>
         </CardContent>

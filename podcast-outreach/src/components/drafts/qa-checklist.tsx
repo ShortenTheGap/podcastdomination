@@ -101,7 +101,7 @@ export function QAChecklist({ draft, onApprove, onReject }: QAChecklistProps) {
             "flex-1 py-2 rounded font-medium",
             allRequiredPassed
               ? "bg-green-600 text-white hover:bg-green-700"
-              : "bg-gray-200 text-gray-500 cursor-not-allowed"
+              : "bg-gray-200 text-gray-700 cursor-not-allowed"
           )}
         >
           Approve & Ready to Send

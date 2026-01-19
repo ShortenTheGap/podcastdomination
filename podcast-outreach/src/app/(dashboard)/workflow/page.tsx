@@ -208,7 +208,7 @@ export default function WorkflowPage() {
             ))}
           </div>
         ) : (
-          <p className="text-gray-500 italic">No scheduled tasks for today</p>
+          <p className="text-gray-700 italic">No scheduled tasks for today</p>
         )}
       </div>
 
@@ -299,7 +299,7 @@ export default function WorkflowPage() {
                 <div className="font-medium text-gray-900">{dayConfig.name}</div>
                 <div className={`text-sm ${colors.text}`}>{dayConfig.focus}</div>
                 {"tasks" in dayConfig && (
-                  <div className="text-xs text-gray-500 mt-2">
+                  <div className="text-xs text-gray-700 mt-2">
                     {dayConfig.tasks.length} tasks
                   </div>
                 )}
@@ -376,7 +376,7 @@ function ActionCard({
         <div className="text-sm text-gray-600">{label}</div>
         <div className="text-2xl font-bold text-gray-900">{count}</div>
       </div>
-      <ChevronRight className="w-5 h-5 text-gray-400" />
+      <ChevronRight className="w-5 h-5 text-gray-600" />
     </a>
   );
 }
