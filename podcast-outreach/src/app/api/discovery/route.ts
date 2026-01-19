@@ -4,6 +4,7 @@ import { z } from "zod";
 const discoverySchema = z.object({
   type: z.enum(["seed_guest", "category"]),
   query: z.string().min(1),
+  category: z.string().optional(), // Optional category for seed_guest searches
   limit: z.number().default(20),
 });
 
@@ -119,16 +120,17 @@ function detectRiskSignals(item: ApplePodcastResult): string[] {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { type, query, limit } = discoverySchema.parse(body);
+    const { type, query, category, limit } = discoverySchema.parse(body);
 
     let results;
 
     if (type === "seed_guest") {
-      // For seed guest searches, search Apple with the guest name
-      results = await searchApplePodcasts(query, limit);
+      // For seed guest searches, combine guest name with category if provided
+      const searchQuery = category ? `${query} ${category} podcast` : query;
+      results = await searchApplePodcasts(searchQuery, limit);
       results = results.map((r: Record<string, unknown>) => ({
         ...r,
-        discoverySource: `seed:${query}`,
+        discoverySource: category ? `seed:${query} (${category})` : `seed:${query}`,
         recentGuests: [query],
       }));
     } else {

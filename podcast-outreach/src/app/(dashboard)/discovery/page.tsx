@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { useDiscovery, useImportPodcast, useRecommendations } from "@/hooks/use-podcasts";
-import { SEED_CATEGORY_CONFIG } from "@/lib/constants";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +34,7 @@ interface ResultWithStatus extends DiscoveryResult {
 
 export default function DiscoveryPage() {
   const [query, setQuery] = useState("");
+  const [seedCategory, setSeedCategory] = useState(""); // Category for seed guest search
   const [searchType, setSearchType] = useState<SearchType>("category");
   const [results, setResults] = useState<ResultWithStatus[]>([]);
   const [notification, setNotification] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -131,9 +131,19 @@ export default function DiscoveryPage() {
           searchTerms,
         });
         setResults(data.results.map((r) => ({ ...r, imported: false })));
-      } else {
+      } else if (searchType === "seed_guest") {
+        // Seed guest search with optional category
         const data = await discovery.mutateAsync({
-          type: searchType as "seed_guest" | "category",
+          type: "seed_guest",
+          query,
+          category: seedCategory.trim() || undefined,
+          limit: 20,
+        });
+        setResults(data.results.map((r) => ({ ...r, imported: false })));
+      } else {
+        // Category search
+        const data = await discovery.mutateAsync({
+          type: "category",
           query,
           limit: 20,
         });
@@ -214,6 +224,7 @@ export default function DiscoveryPage() {
               onValueChange={(v: SearchType) => {
                 setSearchType(v);
                 setQuery(""); // Clear search box when switching types
+                setSeedCategory(""); // Clear seed category when switching types
                 setResults([]); // Clear results when switching types
               }}
             >
@@ -254,23 +265,45 @@ export default function DiscoveryPage() {
               </SelectContent>
             </Select>
 
-            {/* Query input - show for all search types */}
-            <div className="flex-1 min-w-[200px]">
-              <Input
-                placeholder={
-                  searchType === "seed_guest"
-                    ? "Enter seed guest name (e.g., Gary Vaynerchuk)..."
-                    : searchType === "category"
-                    ? "Enter category (e.g., fitness, health, business)..."
-                    : searchType === "best_match"
-                    ? "Enter topics (e.g., fitness, nutrition, wellness)..."
-                    : "Enter topics (e.g., health, business, parenting)..."
-                }
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              />
-            </div>
+            {/* Seed Guest: Two inputs - guest name and category */}
+            {searchType === "seed_guest" && (
+              <>
+                <div className="flex-1 min-w-[180px]">
+                  <Input
+                    placeholder="Guest name (e.g., Gary Vaynerchuk)..."
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                  />
+                </div>
+                <div className="w-[180px]">
+                  <Input
+                    placeholder="Category (e.g., fitness)..."
+                    value={seedCategory}
+                    onChange={(e) => setSeedCategory(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                  />
+                </div>
+              </>
+            )}
+
+            {/* Other search types: Single input */}
+            {searchType !== "seed_guest" && (
+              <div className="flex-1 min-w-[200px]">
+                <Input
+                  placeholder={
+                    searchType === "category"
+                      ? "Enter category (e.g., fitness, health, business)..."
+                      : searchType === "best_match"
+                      ? "Enter topics (e.g., fitness, nutrition, wellness)..."
+                      : "Enter topics (e.g., health, business, parenting)..."
+                  }
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                />
+              </div>
+            )}
 
             <Button
               onClick={handleSearch}
@@ -287,7 +320,7 @@ export default function DiscoveryPage() {
             </Button>
           </div>
 
-          {/* Quick category buttons - shown for category, best_match, and momentum */}
+          {/* Quick category buttons - shown for all search types except seed_guest (which has its own) */}
           {(searchType === "category" || isRecommendationType) && (
             <div className="mt-4">
               <div className="flex items-center justify-between mb-2">
@@ -367,20 +400,78 @@ export default function DiscoveryPage() {
             </div>
           )}
 
-          {/* Seed category info */}
+          {/* Seed Guest: Quick categories for the category field */}
           {searchType === "seed_guest" && (
-            <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-              <p className="text-sm text-blue-700">
-                <strong>Seed Guest Search:</strong> Find podcasts where a specific guest has appeared.
-                This helps discover shows that interview similar experts.
-              </p>
-              <div className="flex flex-wrap gap-2 mt-2">
-                {SEED_CATEGORY_CONFIG.map((cat) => (
-                  <Badge key={cat.id} variant="secondary" className="text-xs">
-                    {cat.label}: up to {cat.limit} guests
-                  </Badge>
-                ))}
+            <div className="mt-4">
+              <div className="p-3 bg-blue-50 rounded-lg border border-blue-200 mb-3">
+                <p className="text-sm text-blue-700">
+                  <strong>Seed Guest Search:</strong> Enter a guest name and optionally a podcast category to find shows where similar experts have appeared.
+                </p>
               </div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-gray-500">Quick Categories:</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setEditingCategories(!editingCategories)}
+                  className="text-xs"
+                >
+                  {editingCategories ? "Done" : "Edit"}
+                </Button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {quickCategories.map((cat) => (
+                  <div key={cat.id} className="relative group">
+                    <Button
+                      variant={seedCategory === cat.name ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => {
+                        if (!editingCategories) {
+                          setSeedCategory(seedCategory === cat.name ? "" : cat.name);
+                        }
+                      }}
+                      className={editingCategories ? "pr-8" : ""}
+                    >
+                      {cat.name}
+                    </Button>
+                    {editingCategories && (
+                      <button
+                        onClick={() => handleDeleteCategory(cat.name)}
+                        className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5 hover:bg-red-600"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {editingCategories && (
+                  <div className="flex items-center gap-1">
+                    <Input
+                      placeholder="New category..."
+                      value={newCategory}
+                      onChange={(e) => setNewCategory(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && handleAddCategory()}
+                      className="h-8 w-32 text-sm"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleAddCategory}
+                      disabled={isAddingCategory || !newCategory.trim()}
+                      className="h-8"
+                    >
+                      {isAddingCategory ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Plus className="h-3 w-3" />
+                      )}
+                    </Button>
+                  </div>
+                )}
+              </div>
+              <p className="text-xs text-gray-400 mt-1">
+                Click a category to filter podcast results, or leave empty to search all podcasts.
+              </p>
             </div>
           )}
 
