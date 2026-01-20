@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Mail,
@@ -21,6 +21,8 @@ import {
   ArrowRight,
   User,
   AlertCircle,
+  Sparkles,
+  Wand2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -86,11 +88,13 @@ const RESPONSE_BRANCHES = [
 
 // localStorage key for persisting campaign changes
 const CAMPAIGNS_STORAGE_KEY = "outreach-campaigns-local";
+const CAMPAIGNS_VERSION_KEY = "outreach-campaigns-version";
 
-// Helper to save campaigns to localStorage
+// Helper to save campaigns to localStorage with version
 function saveCampaignsToStorage(campaigns: OutreachPodcast[]) {
   if (typeof window !== "undefined") {
     localStorage.setItem(CAMPAIGNS_STORAGE_KEY, JSON.stringify(campaigns));
+    localStorage.setItem(CAMPAIGNS_VERSION_KEY, Date.now().toString());
   }
 }
 
@@ -100,13 +104,25 @@ function loadCampaignsFromStorage(): OutreachPodcast[] | null {
     const stored = localStorage.getItem(CAMPAIGNS_STORAGE_KEY);
     if (stored) {
       try {
-        return JSON.parse(stored);
+        const parsed = JSON.parse(stored);
+        // Validate that parsed data is an array
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
       } catch {
         return null;
       }
     }
   }
   return null;
+}
+
+// Helper to clear localStorage campaigns (for debugging/reset)
+function clearCampaignsStorage() {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem(CAMPAIGNS_STORAGE_KEY);
+    localStorage.removeItem(CAMPAIGNS_VERSION_KEY);
+  }
 }
 
 export default function OutreachPage() {
@@ -117,8 +133,25 @@ export default function OutreachPage() {
   const [dragOverStage, setDragOverStage] = useState<OutreachStage | null>(null);
 
   // Local state for campaigns - this is the source of truth for the UI
-  const [localCampaigns, setLocalCampaigns] = useState<OutreachPodcast[]>([]);
-  const [hasInitialized, setHasInitialized] = useState(false);
+  // Initialize directly from localStorage if available
+  const [localCampaigns, setLocalCampaigns] = useState<OutreachPodcast[]>(() => {
+    // Only run on client side
+    if (typeof window !== "undefined") {
+      const stored = loadCampaignsFromStorage();
+      if (stored && stored.length > 0) {
+        return stored;
+      }
+    }
+    return [];
+  });
+  const [hasInitialized, setHasInitialized] = useState(() => {
+    // Consider initialized if we loaded from localStorage
+    if (typeof window !== "undefined") {
+      const stored = loadCampaignsFromStorage();
+      return stored !== null && stored.length > 0;
+    }
+    return false;
+  });
 
   const queryClient = useQueryClient();
 
@@ -135,20 +168,13 @@ export default function OutreachPage() {
     refetchOnReconnect: false,
   });
 
-  // Initialize local state from localStorage or fetched data
+  // Initialize local state from fetched data only if not already loaded from localStorage
   useEffect(() => {
-    if (!hasInitialized) {
-      // First try to load from localStorage
-      const storedCampaigns = loadCampaignsFromStorage();
-      if (storedCampaigns && storedCampaigns.length > 0) {
-        setLocalCampaigns(storedCampaigns);
-        setHasInitialized(true);
-      } else if (outreachData?.campaigns) {
-        // Fall back to API data
-        setLocalCampaigns(outreachData.campaigns);
-        saveCampaignsToStorage(outreachData.campaigns);
-        setHasInitialized(true);
-      }
+    if (!hasInitialized && outreachData?.campaigns) {
+      // Only use API data if we didn't have localStorage data
+      setLocalCampaigns(outreachData.campaigns);
+      saveCampaignsToStorage(outreachData.campaigns);
+      setHasInitialized(true);
     }
   }, [outreachData, hasInitialized]);
 
@@ -626,10 +652,8 @@ function PodcastOutreachDetail({
   onUpdate: () => void;
   onUpdateCampaign: (id: string, updates: Partial<OutreachPodcast>) => void;
 }) {
-  const [activeTab, setActiveTab] = useState<"sequence" | "compose">("sequence");
   const [selectedResponse, setSelectedResponse] = useState<ResponseType | null>(podcast.responseType);
   const [editingEmail, setEditingEmail] = useState<EmailInSequence | null>(null);
-  const [createEmailType, setCreateEmailType] = useState<string | null>(null);
   const [viewingEmail, setViewingEmail] = useState<EmailInSequence | null>(null);
 
   const updateResponse = useMutation({
@@ -667,20 +691,14 @@ function PodcastOutreachDetail({
     }
     onUpdateCampaign(podcast.id, { emailSequence: newSequence });
     setEditingEmail(null);
-    setCreateEmailType(null);
-    setActiveTab("sequence");
-  };
-
-  const handleCreateDraft = (emailType: string) => {
-    setCreateEmailType(emailType);
-    setEditingEmail(null);
-    setActiveTab("compose");
   };
 
   const handleEditEmail = (email: EmailInSequence) => {
     setEditingEmail(email);
-    setCreateEmailType(null);
-    setActiveTab("compose");
+  };
+
+  const handleCancelEdit = () => {
+    setEditingEmail(null);
   };
 
   return (
@@ -726,32 +744,9 @@ function PodcastOutreachDetail({
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="border-b border-slate-200">
-        <div className="flex px-6">
-          <button
-            onClick={() => { setActiveTab("sequence"); setEditingEmail(null); setCreateEmailType(null); }}
-            className={cn(
-              "px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors",
-              activeTab === "sequence"
-                ? "border-blue-600 text-blue-600"
-                : "border-transparent text-slate-600 hover:text-slate-900"
-            )}
-          >
-            Email Sequence
-          </button>
-          <button
-            onClick={() => setActiveTab("compose")}
-            className={cn(
-              "px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors",
-              activeTab === "compose"
-                ? "border-blue-600 text-blue-600"
-                : "border-transparent text-slate-600 hover:text-slate-900"
-            )}
-          >
-            Compose New
-          </button>
-        </div>
+      {/* Section Header */}
+      <div className="border-b border-slate-200 px-6 py-3">
+        <h3 className="text-sm font-medium text-slate-900">Email Sequence</h3>
       </div>
 
       {/* View Email Modal */}
@@ -786,21 +781,20 @@ function PodcastOutreachDetail({
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
-        {activeTab === "sequence" ? (
-          <EmailSequenceTimeline
-            podcast={podcast}
-            onUpdate={onUpdate}
-            onCreateDraft={handleCreateDraft}
-            onEditEmail={handleEditEmail}
-            onViewEmail={setViewingEmail}
-            onUpdateCampaign={onUpdateCampaign}
-          />
-        ) : (
+        {editingEmail ? (
           <ComposeEmail
             podcast={podcast}
             onSent={handleEmailSaved}
             editingEmail={editingEmail}
-            createEmailType={createEmailType}
+            onCancel={handleCancelEdit}
+          />
+        ) : (
+          <EmailSequenceTimeline
+            podcast={podcast}
+            onUpdate={onUpdate}
+            onEditEmail={handleEditEmail}
+            onViewEmail={setViewingEmail}
+            onUpdateCampaign={onUpdateCampaign}
           />
         )}
       </div>
@@ -812,19 +806,18 @@ function PodcastOutreachDetail({
 function EmailSequenceTimeline({
   podcast,
   onUpdate,
-  onCreateDraft,
   onEditEmail,
   onViewEmail,
   onUpdateCampaign,
 }: {
   podcast: OutreachPodcast;
   onUpdate: () => void;
-  onCreateDraft: (emailType: string) => void;
   onEditEmail: (email: EmailInSequence) => void;
   onViewEmail: (email: EmailInSequence) => void;
   onUpdateCampaign: (id: string, updates: Partial<OutreachPodcast>) => void;
 }) {
   const [sendingEmailId, setSendingEmailId] = useState<string | null>(null);
+  const [isGeneratingSequence, setIsGeneratingSequence] = useState(false);
   const sequence = podcast.emailSequence || [];
 
   // Define the sequence template based on response type
@@ -844,6 +837,110 @@ function EmailSequenceTimeline({
   };
 
   const template = getSequenceTemplate();
+
+  // Check if we have any emails in the sequence
+  const hasEmails = sequence.length > 0;
+  const allEmailsGenerated = template.every(step =>
+    sequence.some(e => e.type === step.type)
+  );
+
+  const handleGenerateAllEmails = async () => {
+    setIsGeneratingSequence(true);
+    try {
+      // Load guest profile and email settings from localStorage (these would be saved from settings page)
+      let guestProfile = {};
+      let emailSettings = {};
+
+      if (typeof window !== "undefined") {
+        const storedProfile = localStorage.getItem("guest-profile");
+        const storedEmailSettings = localStorage.getItem("email-settings");
+        if (storedProfile) {
+          try { guestProfile = JSON.parse(storedProfile); } catch {}
+        }
+        if (storedEmailSettings) {
+          try { emailSettings = JSON.parse(storedEmailSettings); } catch {}
+        }
+      }
+
+      const res = await fetch("/api/ai/generate-sequence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          podcastId: podcast.id,
+          podcastName: podcast.showName,
+          hostName: podcast.hostName,
+          podcastEmail: podcast.primaryEmail,
+          guestProfile,
+          emailSettings,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.emailSequence) {
+          onUpdateCampaign(podcast.id, {
+            emailSequence: data.emailSequence,
+            status: "drafting" as OutreachStage,
+          });
+        }
+      } else {
+        // Fallback to basic templates if AI fails
+        const fallbackSequence: EmailInSequence[] = [
+          {
+            id: `email-initial-${Date.now()}`,
+            type: "initial",
+            subject: `Guest opportunity for ${podcast.showName}`,
+            body: `Hi ${podcast.hostName || "there"},\n\nI recently came across ${podcast.showName} and was impressed by your content.\n\nI'd love to explore the possibility of being a guest on your show. Would you be open to a quick call to discuss this further?\n\nBest regards`,
+            status: "draft",
+            sentAt: null,
+            scheduledFor: null,
+            openedAt: null,
+            repliedAt: null,
+          },
+          {
+            id: `email-fu1-${Date.now()}`,
+            type: "follow_up_1",
+            subject: `Following up - ${podcast.showName}`,
+            body: `Hi ${podcast.hostName || "there"},\n\nI wanted to follow up on my previous email about being a guest on ${podcast.showName}.\n\nI understand you're busy, but I'd love to explore this opportunity if you're interested.\n\nBest regards`,
+            status: "draft",
+            sentAt: null,
+            scheduledFor: null,
+            openedAt: null,
+            repliedAt: null,
+          },
+          {
+            id: `email-fu2-${Date.now()}`,
+            type: "follow_up_2",
+            subject: `Quick check-in - ${podcast.showName}`,
+            body: `Hi ${podcast.hostName || "there"},\n\nJust a quick check-in about the guest opportunity.\n\nIf now isn't a good time, no worries at all. Let me know if you'd like me to reach out again in the future.\n\nBest regards`,
+            status: "draft",
+            sentAt: null,
+            scheduledFor: null,
+            openedAt: null,
+            repliedAt: null,
+          },
+          {
+            id: `email-fu3-${Date.now()}`,
+            type: "follow_up_3",
+            subject: `Last note - ${podcast.showName}`,
+            body: `Hi ${podcast.hostName || "there"},\n\nThis will be my last follow-up regarding being a guest on ${podcast.showName}.\n\nIf you're ever looking for guests in the future, please feel free to reach out. I'd be happy to chat.\n\nAll the best`,
+            status: "draft",
+            sentAt: null,
+            scheduledFor: null,
+            openedAt: null,
+            repliedAt: null,
+          },
+        ];
+        onUpdateCampaign(podcast.id, {
+          emailSequence: fallbackSequence,
+          status: "drafting" as OutreachStage,
+        });
+      }
+    } catch (error) {
+      console.error("Failed to generate email sequence:", error);
+    }
+    setIsGeneratingSequence(false);
+  };
 
   const handleSendNow = async (email: EmailInSequence) => {
     setSendingEmailId(email.id);
@@ -886,13 +983,25 @@ function EmailSequenceTimeline({
     <div className="space-y-4">
       <div className="flex items-center justify-between mb-4">
         <h4 className="font-medium text-slate-900">Email Timeline</h4>
-        <button
-          onClick={() => onCreateDraft("follow_up_1")}
-          className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
-        >
-          <Plus className="h-4 w-4" />
-          Add Email
-        </button>
+        {!allEmailsGenerated && (
+          <button
+            onClick={handleGenerateAllEmails}
+            disabled={isGeneratingSequence}
+            className="px-3 py-1.5 bg-gradient-to-r from-purple-600 to-blue-600 text-white text-sm font-medium rounded-lg hover:from-purple-700 hover:to-blue-700 disabled:opacity-50 flex items-center gap-2"
+          >
+            {isGeneratingSequence ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Generating...
+              </>
+            ) : (
+              <>
+                <Wand2 className="h-4 w-4" />
+                Generate All Emails
+              </>
+            )}
+          </button>
+        )}
       </div>
 
       <div className="relative">
@@ -1002,14 +1111,8 @@ function EmailSequenceTimeline({
                   </>
                 ) : (
                   <div className="text-center py-4">
-                    <p className="text-sm text-slate-500 mb-2">Not created yet</p>
-                    <button
-                      onClick={() => onCreateDraft(step.type)}
-                      className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1 mx-auto"
-                    >
-                      <Plus className="h-4 w-4" />
-                      Create Draft
-                    </button>
+                    <p className="text-sm text-slate-500">Not created yet</p>
+                    <p className="text-xs text-slate-400 mt-1">Use "Generate All Emails" above</p>
                   </div>
                 )}
               </div>
@@ -1021,45 +1124,37 @@ function EmailSequenceTimeline({
   );
 }
 
-// Compose Email Component
+// Compose Email Component - Used for editing existing emails
 function ComposeEmail({
   podcast,
   onSent,
   editingEmail,
-  createEmailType,
+  onCancel,
 }: {
   podcast: OutreachPodcast;
   onSent: (email: EmailInSequence) => void;
-  editingEmail: EmailInSequence | null;
-  createEmailType: string | null;
+  editingEmail: EmailInSequence;
+  onCancel: () => void;
 }) {
-  const [emailType, setEmailType] = useState<string>(editingEmail?.type || createEmailType || "initial");
-  const [subject, setSubject] = useState(editingEmail?.subject || "");
-  const [body, setBody] = useState(editingEmail?.body || "");
+  const [subject, setSubject] = useState(editingEmail.subject);
+  const [body, setBody] = useState(editingEmail.body);
   const [isSaving, setIsSaving] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
 
   // Update form when editing email changes
   useEffect(() => {
-    if (editingEmail) {
-      setEmailType(editingEmail.type);
-      setSubject(editingEmail.subject);
-      setBody(editingEmail.body);
-    } else if (createEmailType) {
-      setEmailType(createEmailType);
-      setSubject("");
-      setBody("");
-    }
-  }, [editingEmail, createEmailType]);
+    setSubject(editingEmail.subject);
+    setBody(editingEmail.body);
+  }, [editingEmail]);
 
-  const emailTypes = [
-    { id: "initial", label: "Initial Outreach" },
-    { id: "follow_up_1", label: "Follow-up #1" },
-    { id: "follow_up_2", label: "Follow-up #2" },
-    { id: "follow_up_3", label: "Final Follow-up" },
-    { id: "nurture", label: "Nurture Email" },
-    { id: "closing", label: "Closing Email" },
-  ];
+  const emailTypeLabels: Record<string, string> = {
+    initial: "Initial Outreach",
+    follow_up_1: "Follow-up #1",
+    follow_up_2: "Follow-up #2",
+    follow_up_3: "Final Follow-up",
+    nurture: "Nurture Email",
+    closing: "Closing Email",
+  };
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -1068,8 +1163,8 @@ function ComposeEmail({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          id: editingEmail?.id,
-          type: emailType,
+          id: editingEmail.id,
+          type: editingEmail.type,
           subject,
           body,
           status: "draft",
@@ -1077,19 +1172,11 @@ function ComposeEmail({
       });
       if (res.ok) {
         const savedEmail: EmailInSequence = {
-          id: editingEmail?.id || `email-${Date.now()}`,
-          type: emailType as EmailInSequence["type"],
+          ...editingEmail,
           subject,
           body,
-          status: "draft",
-          sentAt: null,
-          scheduledFor: null,
-          openedAt: null,
-          repliedAt: null,
         };
         onSent(savedEmail);
-        setSubject("");
-        setBody("");
       }
     } catch (error) {
       console.error("Failed to save email:", error);
@@ -1107,7 +1194,7 @@ function ComposeEmail({
           podcastId: podcast.id,
           podcastName: podcast.showName,
           hostName: podcast.hostName,
-          emailType: emailType,
+          emailType: editingEmail.type,
         }),
       });
       if (res.ok) {
@@ -1129,8 +1216,12 @@ function ComposeEmail({
             subject: `Quick check-in - ${podcast.showName}`,
             body: `Hi ${podcast.hostName || "there"},\n\nJust wanted to check in one more time about the guest opportunity on ${podcast.showName}.\n\nIf now isn't a good time, no worries at all. Just let me know if you'd like me to reach out again in the future.\n\nBest regards`,
           },
+          follow_up_3: {
+            subject: `Last note - ${podcast.showName}`,
+            body: `Hi ${podcast.hostName || "there"},\n\nThis will be my last follow-up regarding being a guest on ${podcast.showName}.\n\nIf you're ever looking for guests in the future, please feel free to reach out.\n\nAll the best`,
+          },
         };
-        const template = templates[emailType] || templates.initial;
+        const template = templates[editingEmail.type] || templates.initial;
         setSubject(template.subject);
         setBody(template.body);
       }
@@ -1145,24 +1236,16 @@ function ComposeEmail({
 
   return (
     <div className="space-y-4">
-      {editingEmail && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-700">
-          Editing existing email draft
+      <div className="flex items-center justify-between">
+        <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm text-blue-700">
+          Editing: {emailTypeLabels[editingEmail.type] || editingEmail.type}
         </div>
-      )}
-
-      <div>
-        <label className="text-sm font-medium text-slate-700">Email Type</label>
-        <select
-          value={emailType}
-          onChange={(e) => setEmailType(e.target.value)}
-          className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900"
-          disabled={!!editingEmail}
+        <button
+          onClick={onCancel}
+          className="text-sm text-slate-600 hover:text-slate-800"
         >
-          {emailTypes.map((type) => (
-            <option key={type.id} value={type.id}>{type.label}</option>
-          ))}
-        </select>
+          Cancel
+        </button>
       </div>
 
       <div>
@@ -1204,7 +1287,7 @@ function ComposeEmail({
           className="flex-1 bg-blue-600 text-white rounded-lg py-2.5 hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
         >
           {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Edit className="h-4 w-4" />}
-          {editingEmail ? "Update Draft" : "Save as Draft"}
+          Update Draft
         </button>
         <button
           onClick={handleGenerateAI}
@@ -1212,12 +1295,9 @@ function ComposeEmail({
           className="px-4 py-2.5 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 flex items-center gap-2 disabled:opacity-50"
         >
           {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-          Generate with AI
+          Regenerate with AI
         </button>
       </div>
     </div>
   );
 }
-
-// Import Sparkles for AI button
-import { Sparkles } from "lucide-react";

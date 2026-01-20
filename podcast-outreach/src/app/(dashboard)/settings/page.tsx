@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   User,
@@ -58,11 +58,37 @@ export default function SettingsPage() {
     followUp3Days: 14,
   });
 
+  // Load settings from localStorage on mount
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const storedProfile = localStorage.getItem("guest-profile");
+      const storedEmailSettings = localStorage.getItem("email-settings");
+      if (storedProfile) {
+        try {
+          setGuestProfile(JSON.parse(storedProfile));
+        } catch {}
+      }
+      if (storedEmailSettings) {
+        try {
+          setEmailSettings(JSON.parse(storedEmailSettings));
+        } catch {}
+      }
+    }
+  }, []);
+
   const handleSaveProfile = () => {
+    // Save to localStorage for email generation
+    if (typeof window !== "undefined") {
+      localStorage.setItem("guest-profile", JSON.stringify(guestProfile));
+    }
     alert("Profile saved!");
   };
 
   const handleSaveEmail = () => {
+    // Save to localStorage for email generation
+    if (typeof window !== "undefined") {
+      localStorage.setItem("email-settings", JSON.stringify(emailSettings));
+    }
     alert("Email settings saved!");
   };
 
