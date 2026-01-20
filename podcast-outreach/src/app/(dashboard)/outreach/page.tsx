@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Mail,
@@ -11,14 +11,11 @@ import {
   Calendar,
   ChevronRight,
   Loader2,
-  Plus,
   Edit,
   Eye,
-  MoreHorizontal,
   MessageSquare,
   Archive,
   RefreshCw,
-  ArrowRight,
   User,
   AlertCircle,
   Sparkles,
@@ -133,25 +130,9 @@ export default function OutreachPage() {
   const [dragOverStage, setDragOverStage] = useState<OutreachStage | null>(null);
 
   // Local state for campaigns - this is the source of truth for the UI
-  // Initialize directly from localStorage if available
-  const [localCampaigns, setLocalCampaigns] = useState<OutreachPodcast[]>(() => {
-    // Only run on client side
-    if (typeof window !== "undefined") {
-      const stored = loadCampaignsFromStorage();
-      if (stored && stored.length > 0) {
-        return stored;
-      }
-    }
-    return [];
-  });
-  const [hasInitialized, setHasInitialized] = useState(() => {
-    // Consider initialized if we loaded from localStorage
-    if (typeof window !== "undefined") {
-      const stored = loadCampaignsFromStorage();
-      return stored !== null && stored.length > 0;
-    }
-    return false;
-  });
+  // We use refs to track initialization without causing re-renders
+  const [localCampaigns, setLocalCampaigns] = useState<OutreachPodcast[]>([]);
+  const hasInitializedRef = useRef(false);
 
   const queryClient = useQueryClient();
 
@@ -168,15 +149,28 @@ export default function OutreachPage() {
     refetchOnReconnect: false,
   });
 
-  // Initialize local state from fetched data only if not already loaded from localStorage
+  // Initialize campaigns: first check localStorage, then fall back to API data
+  // This effect runs once on mount and when API data arrives
+  // Note: setState in useEffect is required here for SSR-compatible localStorage access
   useEffect(() => {
-    if (!hasInitialized && outreachData?.campaigns) {
-      // Only use API data if we didn't have localStorage data
+    if (hasInitializedRef.current) return;
+
+    // First try to load from localStorage (client-side only)
+    const stored = loadCampaignsFromStorage();
+    if (stored && stored.length > 0) {
+      // eslint-disable-next-line
+      setLocalCampaigns(stored);
+      hasInitializedRef.current = true;
+      return;
+    }
+
+    // If no localStorage data, use API data when available
+    if (outreachData?.campaigns) {
       setLocalCampaigns(outreachData.campaigns);
       saveCampaignsToStorage(outreachData.campaigns);
-      setHasInitialized(true);
+      hasInitializedRef.current = true;
     }
-  }, [outreachData, hasInitialized]);
+  }, [outreachData]);
 
   // Helper to update campaigns and persist to localStorage
   const updateLocalCampaigns = (updater: (prev: OutreachPodcast[]) => OutreachPodcast[]) => {
@@ -1112,7 +1106,7 @@ function EmailSequenceTimeline({
                 ) : (
                   <div className="text-center py-4">
                     <p className="text-sm text-slate-500">Not created yet</p>
-                    <p className="text-xs text-slate-400 mt-1">Use "Generate All Emails" above</p>
+                    <p className="text-xs text-slate-400 mt-1">Use &quot;Generate All Emails&quot; above</p>
                   </div>
                 )}
               </div>
