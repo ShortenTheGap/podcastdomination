@@ -88,8 +88,54 @@ export default function OutreachPage() {
   const [viewMode, setViewMode] = useState<"pipeline" | "list">("pipeline");
   const [selectedPodcast, setSelectedPodcast] = useState<OutreachPodcast | null>(null);
   const [filterStage, setFilterStage] = useState<OutreachStage | "all">("all");
+  const [draggedPodcast, setDraggedPodcast] = useState<OutreachPodcast | null>(null);
+  const [dragOverStage, setDragOverStage] = useState<OutreachStage | null>(null);
 
   const queryClient = useQueryClient();
+
+  // Mutation to update podcast stage
+  const updateStageMutation = useMutation({
+    mutationFn: async ({ podcastId, newStage }: { podcastId: string; newStage: OutreachStage }) => {
+      const res = await fetch(`/api/outreach/campaigns/${podcastId}/response`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stage: newStage }),
+      });
+      if (!res.ok) throw new Error("Failed to update stage");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["outreach-campaigns"] });
+    },
+  });
+
+  // Drag handlers
+  const handleDragStart = (podcast: OutreachPodcast) => {
+    setDraggedPodcast(podcast);
+  };
+
+  const handleDragOver = (e: React.DragEvent, stageId: OutreachStage) => {
+    e.preventDefault();
+    setDragOverStage(stageId);
+  };
+
+  const handleDragLeave = () => {
+    setDragOverStage(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, targetStage: OutreachStage) => {
+    e.preventDefault();
+    if (draggedPodcast && draggedPodcast.status !== targetStage) {
+      updateStageMutation.mutate({ podcastId: draggedPodcast.id, newStage: targetStage });
+    }
+    setDraggedPodcast(null);
+    setDragOverStage(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedPodcast(null);
+    setDragOverStage(null);
+  };
 
   // Fetch outreach data
   const { data: outreachData, isLoading } = useQuery({
@@ -179,6 +225,13 @@ export default function OutreachPage() {
               stage={stage}
               podcasts={podcastsByStage[stage.id] || []}
               onSelectPodcast={setSelectedPodcast}
+              isDragOver={dragOverStage === stage.id}
+              onDragOver={(e) => handleDragOver(e, stage.id)}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, stage.id)}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+              draggedPodcastId={draggedPodcast?.id || null}
             />
           ))}
         </div>
@@ -270,10 +323,24 @@ function PipelineColumn({
   stage,
   podcasts,
   onSelectPodcast,
+  isDragOver,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onDragStart,
+  onDragEnd,
+  draggedPodcastId,
 }: {
   stage: { id: OutreachStage; label: string; color: string; icon: React.ReactNode };
   podcasts: OutreachPodcast[];
   onSelectPodcast: (podcast: OutreachPodcast) => void;
+  isDragOver: boolean;
+  onDragOver: (e: React.DragEvent) => void;
+  onDragLeave: () => void;
+  onDrop: (e: React.DragEvent) => void;
+  onDragStart: (podcast: OutreachPodcast) => void;
+  onDragEnd: () => void;
+  draggedPodcastId: string | null;
 }) {
   return (
     <div className="flex-shrink-0 w-72">
@@ -284,15 +351,31 @@ function PipelineColumn({
           {podcasts.length}
         </span>
       </div>
-      <div className="bg-slate-50 border border-t-0 border-slate-200 rounded-b-lg p-2 min-h-[400px] space-y-2">
+      <div
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
+        className={cn(
+          "bg-slate-50 border border-t-0 border-slate-200 rounded-b-lg p-2 min-h-[400px] space-y-2 transition-colors",
+          isDragOver && "bg-blue-50 border-blue-300 border-2 border-dashed"
+        )}
+      >
         {podcasts.length === 0 ? (
-          <p className="text-center text-sm text-slate-500 py-8">No podcasts</p>
+          <p className={cn(
+            "text-center text-sm py-8",
+            isDragOver ? "text-blue-500" : "text-slate-500"
+          )}>
+            {isDragOver ? "Drop here" : "No podcasts"}
+          </p>
         ) : (
           podcasts.map((podcast) => (
             <PipelineCard
               key={podcast.id}
               podcast={podcast}
               onClick={() => onSelectPodcast(podcast)}
+              onDragStart={() => onDragStart(podcast)}
+              onDragEnd={onDragEnd}
+              isDragging={draggedPodcastId === podcast.id}
             />
           ))
         )}
@@ -305,16 +388,34 @@ function PipelineColumn({
 function PipelineCard({
   podcast,
   onClick,
+  onDragStart,
+  onDragEnd,
+  isDragging,
 }: {
   podcast: OutreachPodcast;
   onClick: () => void;
+  onDragStart: () => void;
+  onDragEnd: () => void;
+  isDragging: boolean;
 }) {
   const sentCount = podcast.emailSequence?.filter((e) => e.status === "sent" || e.status === "opened" || e.status === "replied").length || 0;
 
+  const handleDragStart = (e: React.DragEvent) => {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", podcast.id);
+    onDragStart();
+  };
+
   return (
     <div
+      draggable
+      onDragStart={handleDragStart}
+      onDragEnd={onDragEnd}
       onClick={onClick}
-      className="bg-white border border-slate-200 rounded-lg p-3 hover:border-blue-300 hover:shadow-sm transition-all cursor-pointer"
+      className={cn(
+        "bg-white border border-slate-200 rounded-lg p-3 hover:border-blue-300 hover:shadow-sm transition-all cursor-grab active:cursor-grabbing",
+        isDragging && "opacity-50 shadow-lg ring-2 ring-blue-400"
+      )}
     >
       <div className="flex items-start justify-between gap-2 mb-2">
         <h4 className="font-medium text-slate-900 text-sm line-clamp-1">{podcast.showName}</h4>

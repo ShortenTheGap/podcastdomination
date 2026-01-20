@@ -41,47 +41,82 @@ function mapResponseToDbFields(responseType: string) {
   }
 }
 
+// Map stage to database status
+function mapStageToDbStatus(stage: string) {
+  switch (stage) {
+    case "not_started":
+      return { status: "NOT_STARTED" as const };
+    case "drafting":
+      return { status: "RESEARCHING" as const };
+    case "ready_to_send":
+      return { status: "DRAFTED" as const };
+    case "sent_awaiting":
+      return { status: "CONTACTED" as const };
+    case "follow_up_due":
+      return { status: "FOLLOW_UP_DUE" as const };
+    case "responded":
+      return { status: "REPLIED" as const };
+    case "booked":
+      return { status: "CLOSED" as const, outcome: "BOOKED" as const };
+    case "closed":
+      return { status: "CLOSED" as const };
+    default:
+      return {};
+  }
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
-    const { responseType } = await request.json();
+    const { responseType, stage } = await request.json();
 
-    if (!responseType) {
-      return NextResponse.json({ error: "Response type required" }, { status: 400 });
+    if (!responseType && !stage) {
+      return NextResponse.json({ error: "Response type or stage required" }, { status: 400 });
     }
 
     if (!isPrismaAvailable()) {
       return NextResponse.json({
         success: true,
-        message: "Response updated (demo mode)",
+        message: "Updated (demo mode)",
+        stage: stage,
+        responseType: responseType,
       });
     }
 
-    const updateData = mapResponseToDbFields(responseType);
+    let updateData = {};
+    let noteContent = "";
+
+    if (stage) {
+      updateData = mapStageToDbStatus(stage);
+      noteContent = `Stage changed to: ${stage}`;
+    } else if (responseType) {
+      updateData = {
+        ...mapResponseToDbFields(responseType),
+        replyReceivedAt: responseType !== "no_response" ? new Date() : undefined,
+      };
+      noteContent = `Response status changed to: ${responseType}`;
+    }
 
     await prisma.podcast.update({
       where: { id },
-      data: {
-        ...updateData,
-        replyReceivedAt: responseType !== "no_response" ? new Date() : undefined,
-      },
+      data: updateData,
     });
 
-    // Create a note about the response
+    // Create a note about the change
     await prisma.note.create({
       data: {
         podcastId: id,
-        content: `Response status changed to: ${responseType}`,
+        content: noteContent,
         author: "system",
       },
     });
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Error updating response:", error);
-    return NextResponse.json({ error: "Failed to update response" }, { status: 500 });
+    console.error("Error updating:", error);
+    return NextResponse.json({ error: "Failed to update" }, { status: 500 });
   }
 }
