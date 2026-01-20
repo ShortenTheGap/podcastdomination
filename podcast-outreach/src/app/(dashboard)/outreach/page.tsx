@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Mail,
@@ -130,9 +130,20 @@ export default function OutreachPage() {
   const [dragOverStage, setDragOverStage] = useState<OutreachStage | null>(null);
 
   // Local state for campaigns - this is the source of truth for the UI
-  // We use refs to track initialization without causing re-renders
-  const [localCampaigns, setLocalCampaigns] = useState<OutreachPodcast[]>([]);
-  const hasInitializedRef = useRef(false);
+  // Initialize from localStorage synchronously to avoid flash of wrong data
+  const [localCampaigns, setLocalCampaigns] = useState<OutreachPodcast[]>(() => {
+    // Only run on client (SSR safety)
+    if (typeof window === "undefined") return [];
+    const stored = loadCampaignsFromStorage();
+    return stored || [];
+  });
+
+  // Track initialization state explicitly to prevent API data from overwriting localStorage
+  const [initState, setInitState] = useState<'pending' | 'from_storage' | 'from_api'>(() => {
+    if (typeof window === "undefined") return 'pending';
+    const stored = loadCampaignsFromStorage();
+    return stored && stored.length > 0 ? 'from_storage' : 'pending';
+  });
 
   const queryClient = useQueryClient();
 
@@ -150,27 +161,29 @@ export default function OutreachPage() {
   });
 
   // Initialize campaigns: first check localStorage, then fall back to API data
-  // This effect runs once on mount and when API data arrives
-  // Note: setState in useEffect is required here for SSR-compatible localStorage access
+  // Only use API data if localStorage was empty on initial load
   useEffect(() => {
-    if (hasInitializedRef.current) return;
+    // If we already loaded from storage, never overwrite with API data
+    if (initState === 'from_storage') return;
 
-    // First try to load from localStorage (client-side only)
+    // If we already loaded from API, don't run again
+    if (initState === 'from_api') return;
+
+    // Double-check localStorage in case it was populated after initial render
     const stored = loadCampaignsFromStorage();
     if (stored && stored.length > 0) {
-      // eslint-disable-next-line
       setLocalCampaigns(stored);
-      hasInitializedRef.current = true;
+      setInitState('from_storage');
       return;
     }
 
-    // If no localStorage data, use API data when available
-    if (outreachData?.campaigns) {
+    // Only fall back to API data if localStorage is empty
+    if (outreachData?.campaigns && outreachData.campaigns.length > 0) {
       setLocalCampaigns(outreachData.campaigns);
       saveCampaignsToStorage(outreachData.campaigns);
-      hasInitializedRef.current = true;
+      setInitState('from_api');
     }
-  }, [outreachData]);
+  }, [outreachData, initState]);
 
   // Helper to update campaigns and persist to localStorage
   const updateLocalCampaigns = (updater: (prev: OutreachPodcast[]) => OutreachPodcast[]) => {
@@ -179,6 +192,8 @@ export default function OutreachPage() {
       saveCampaignsToStorage(updated);
       return updated;
     });
+    // Mark as from_storage since user has made modifications
+    setInitState('from_storage');
   };
 
   // Function to update campaign stage locally
