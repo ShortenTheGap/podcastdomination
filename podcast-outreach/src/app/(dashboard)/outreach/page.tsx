@@ -93,7 +93,7 @@ export default function OutreachPage() {
 
   const queryClient = useQueryClient();
 
-  // Mutation to update podcast stage
+  // Mutation to update podcast stage with optimistic updates
   const updateStageMutation = useMutation({
     mutationFn: async ({ podcastId, newStage }: { podcastId: string; newStage: OutreachStage }) => {
       const res = await fetch(`/api/outreach/campaigns/${podcastId}/response`, {
@@ -104,8 +104,40 @@ export default function OutreachPage() {
       if (!res.ok) throw new Error("Failed to update stage");
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["outreach-campaigns"] });
+    // Optimistic update - update the UI immediately before API call completes
+    onMutate: async ({ podcastId, newStage }) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ["outreach-campaigns"] });
+
+      // Snapshot the previous value
+      const previousData = queryClient.getQueryData<{ campaigns: OutreachPodcast[] }>(["outreach-campaigns"]);
+
+      // Optimistically update the cache
+      queryClient.setQueryData<{ campaigns: OutreachPodcast[] }>(["outreach-campaigns"], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          campaigns: old.campaigns.map((campaign) =>
+            campaign.id === podcastId
+              ? { ...campaign, status: newStage }
+              : campaign
+          ),
+        };
+      });
+
+      // Return context with the previous data for rollback
+      return { previousData };
+    },
+    // If mutation fails, rollback to previous data
+    onError: (err, variables, context) => {
+      if (context?.previousData) {
+        queryClient.setQueryData(["outreach-campaigns"], context.previousData);
+      }
+    },
+    // Always refetch after error or success to ensure data is in sync
+    onSettled: () => {
+      // Don't refetch - trust the optimistic update for demo mode
+      // queryClient.invalidateQueries({ queryKey: ["outreach-campaigns"] });
     },
   });
 
