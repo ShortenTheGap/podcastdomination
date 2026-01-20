@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Mail,
@@ -91,55 +91,50 @@ export default function OutreachPage() {
   const [draggedPodcast, setDraggedPodcast] = useState<OutreachPodcast | null>(null);
   const [dragOverStage, setDragOverStage] = useState<OutreachStage | null>(null);
 
+  // Local state for campaigns - this is the source of truth for the UI
+  const [localCampaigns, setLocalCampaigns] = useState<OutreachPodcast[]>([]);
+  const [hasInitialized, setHasInitialized] = useState(false);
+
   const queryClient = useQueryClient();
 
-  // Mutation to update podcast stage with optimistic updates
-  const updateStageMutation = useMutation({
-    mutationFn: async ({ podcastId, newStage }: { podcastId: string; newStage: OutreachStage }) => {
-      const res = await fetch(`/api/outreach/campaigns/${podcastId}/response`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stage: newStage }),
-      });
-      if (!res.ok) throw new Error("Failed to update stage");
+  // Fetch outreach data
+  const { data: outreachData, isLoading } = useQuery({
+    queryKey: ["outreach-campaigns"],
+    queryFn: async () => {
+      const res = await fetch("/api/outreach/campaigns");
+      if (!res.ok) throw new Error("Failed to fetch");
       return res.json();
     },
-    // Optimistic update - update the UI immediately before API call completes
-    onMutate: async ({ podcastId, newStage }) => {
-      // Cancel any outgoing refetches
-      await queryClient.cancelQueries({ queryKey: ["outreach-campaigns"] });
-
-      // Snapshot the previous value
-      const previousData = queryClient.getQueryData<{ campaigns: OutreachPodcast[] }>(["outreach-campaigns"]);
-
-      // Optimistically update the cache
-      queryClient.setQueryData<{ campaigns: OutreachPodcast[] }>(["outreach-campaigns"], (old) => {
-        if (!old) return old;
-        return {
-          ...old,
-          campaigns: old.campaigns.map((campaign) =>
-            campaign.id === podcastId
-              ? { ...campaign, status: newStage }
-              : campaign
-          ),
-        };
-      });
-
-      // Return context with the previous data for rollback
-      return { previousData };
-    },
-    // If mutation fails, rollback to previous data
-    onError: (err, variables, context) => {
-      if (context?.previousData) {
-        queryClient.setQueryData(["outreach-campaigns"], context.previousData);
-      }
-    },
-    // Always refetch after error or success to ensure data is in sync
-    onSettled: () => {
-      // Don't refetch - trust the optimistic update for demo mode
-      // queryClient.invalidateQueries({ queryKey: ["outreach-campaigns"] });
-    },
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
+
+  // Initialize local state from fetched data (only once)
+  useEffect(() => {
+    if (outreachData?.campaigns && !hasInitialized) {
+      setLocalCampaigns(outreachData.campaigns);
+      setHasInitialized(true);
+    }
+  }, [outreachData, hasInitialized]);
+
+  // Function to update campaign stage locally
+  const updateCampaignStage = (podcastId: string, newStage: OutreachStage) => {
+    setLocalCampaigns(prev =>
+      prev.map(campaign =>
+        campaign.id === podcastId
+          ? { ...campaign, status: newStage }
+          : campaign
+      )
+    );
+
+    // Also fire API call in background (fire and forget)
+    fetch(`/api/outreach/campaigns/${podcastId}/response`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stage: newStage }),
+    }).catch(err => console.log("API update failed (demo mode):", err));
+  };
 
   // Drag handlers
   const handleDragStart = (podcast: OutreachPodcast) => {
@@ -158,7 +153,7 @@ export default function OutreachPage() {
   const handleDrop = (e: React.DragEvent, targetStage: OutreachStage) => {
     e.preventDefault();
     if (draggedPodcast && draggedPodcast.status !== targetStage) {
-      updateStageMutation.mutate({ podcastId: draggedPodcast.id, newStage: targetStage });
+      updateCampaignStage(draggedPodcast.id, targetStage);
     }
     setDraggedPodcast(null);
     setDragOverStage(null);
@@ -169,22 +164,8 @@ export default function OutreachPage() {
     setDragOverStage(null);
   };
 
-  // Fetch outreach data
-  const { data: outreachData, isLoading } = useQuery({
-    queryKey: ["outreach-campaigns"],
-    queryFn: async () => {
-      const res = await fetch("/api/outreach/campaigns");
-      if (!res.ok) throw new Error("Failed to fetch");
-      return res.json();
-    },
-    // Prevent automatic refetching that would override optimistic updates
-    staleTime: Infinity,
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
-    refetchOnReconnect: false,
-  });
-
-  const podcasts: OutreachPodcast[] = outreachData?.campaigns || [];
+  // Use local campaigns as the source of truth
+  const podcasts: OutreachPodcast[] = localCampaigns;
 
   // Group podcasts by stage for pipeline view
   const podcastsByStage = PIPELINE_STAGES.reduce((acc, stage) => {
