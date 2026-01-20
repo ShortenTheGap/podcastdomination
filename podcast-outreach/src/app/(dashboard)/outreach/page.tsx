@@ -84,6 +84,31 @@ const RESPONSE_BRANCHES = [
   { id: "opted_out", label: "Opted Out", description: "Do not contact", color: "text-slate-600", bgColor: "bg-slate-100" },
 ];
 
+// localStorage key for persisting campaign changes
+const CAMPAIGNS_STORAGE_KEY = "outreach-campaigns-local";
+
+// Helper to save campaigns to localStorage
+function saveCampaignsToStorage(campaigns: OutreachPodcast[]) {
+  if (typeof window !== "undefined") {
+    localStorage.setItem(CAMPAIGNS_STORAGE_KEY, JSON.stringify(campaigns));
+  }
+}
+
+// Helper to load campaigns from localStorage
+function loadCampaignsFromStorage(): OutreachPodcast[] | null {
+  if (typeof window !== "undefined") {
+    const stored = localStorage.getItem(CAMPAIGNS_STORAGE_KEY);
+    if (stored) {
+      try {
+        return JSON.parse(stored);
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
 export default function OutreachPage() {
   const [viewMode, setViewMode] = useState<"pipeline" | "list">("pipeline");
   const [selectedPodcast, setSelectedPodcast] = useState<OutreachPodcast | null>(null);
@@ -110,17 +135,35 @@ export default function OutreachPage() {
     refetchOnReconnect: false,
   });
 
-  // Initialize local state from fetched data (only once)
+  // Initialize local state from localStorage or fetched data
   useEffect(() => {
-    if (outreachData?.campaigns && !hasInitialized) {
-      setLocalCampaigns(outreachData.campaigns);
-      setHasInitialized(true);
+    if (!hasInitialized) {
+      // First try to load from localStorage
+      const storedCampaigns = loadCampaignsFromStorage();
+      if (storedCampaigns && storedCampaigns.length > 0) {
+        setLocalCampaigns(storedCampaigns);
+        setHasInitialized(true);
+      } else if (outreachData?.campaigns) {
+        // Fall back to API data
+        setLocalCampaigns(outreachData.campaigns);
+        saveCampaignsToStorage(outreachData.campaigns);
+        setHasInitialized(true);
+      }
     }
   }, [outreachData, hasInitialized]);
 
+  // Helper to update campaigns and persist to localStorage
+  const updateLocalCampaigns = (updater: (prev: OutreachPodcast[]) => OutreachPodcast[]) => {
+    setLocalCampaigns(prev => {
+      const updated = updater(prev);
+      saveCampaignsToStorage(updated);
+      return updated;
+    });
+  };
+
   // Function to update campaign stage locally
   const updateCampaignStage = (podcastId: string, newStage: OutreachStage) => {
-    setLocalCampaigns(prev =>
+    updateLocalCampaigns(prev =>
       prev.map(campaign =>
         campaign.id === podcastId
           ? { ...campaign, status: newStage }
@@ -298,7 +341,8 @@ export default function OutreachPage() {
           onClose={() => setSelectedPodcast(null)}
           onUpdate={() => queryClient.invalidateQueries({ queryKey: ["outreach-campaigns"] })}
           onUpdateCampaign={(id, updates) => {
-            setLocalCampaigns(prev =>
+            // Update local campaigns and persist to localStorage
+            updateLocalCampaigns(prev =>
               prev.map(campaign =>
                 campaign.id === id
                   ? { ...campaign, ...updates }
