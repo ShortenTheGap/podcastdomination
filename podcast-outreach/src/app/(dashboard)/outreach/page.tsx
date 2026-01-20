@@ -177,6 +177,11 @@ export default function OutreachPage() {
       if (!res.ok) throw new Error("Failed to fetch");
       return res.json();
     },
+    // Prevent automatic refetching that would override optimistic updates
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
   });
 
   const podcasts: OutreachPodcast[] = outreachData?.campaigns || [];
