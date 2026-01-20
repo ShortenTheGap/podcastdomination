@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, isPrismaAvailable } from "@/lib/db";
+import { getDemoCampaigns, updateDemoCampaign, DemoCampaign } from "@/lib/demo-campaigns";
+
+// Re-export for backwards compatibility
+export { getDemoCampaigns as getInMemoryCampaigns, updateDemoCampaign as updateInMemoryCampaign };
 
 // Types for outreach campaigns
 interface EmailInSequence {
@@ -26,162 +30,6 @@ interface OutreachCampaign {
   lastContactedAt: string | null;
   nextFollowUpAt: string | null;
   createdAt: string;
-}
-
-// In-memory storage for demo purposes when DB unavailable
-// Using globalThis to persist across module reloads in development
-const globalForCampaigns = globalThis as unknown as {
-  inMemoryCampaigns: OutreachCampaign[] | undefined;
-};
-
-// Initialize demo data
-function getInitialDemoData(): OutreachCampaign[] {
-  return [
-    {
-      id: "demo-1",
-      showName: "The Health & Fitness Podcast",
-      hostName: "Dr. Sarah Johnson",
-      primaryEmail: "sarah@healthpodcast.com",
-      tier: "TIER_1",
-      status: "sent_awaiting",
-      responseType: null,
-      emailSequence: [
-        {
-          id: "email-1",
-          type: "initial",
-          subject: "Guest opportunity for The Health & Fitness Podcast",
-          body: "Hi Sarah, I came across your podcast and loved your episode on nutrition myths...",
-          status: "sent",
-          sentAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-          scheduledFor: null,
-          openedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-          repliedAt: null,
-        },
-      ],
-      lastContactedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-      nextFollowUpAt: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString(),
-      createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-    },
-    {
-      id: "demo-2",
-      showName: "CEO Mindset Show",
-      hostName: "Mike Thompson",
-      primaryEmail: "booking@ceomindset.com",
-      tier: "TIER_2",
-      status: "drafting",
-      responseType: null,
-      emailSequence: [
-        {
-          id: "email-2",
-          type: "initial",
-          subject: "Guest pitch for CEO Mindset Show",
-          body: "Hi Mike, I've been following your show and think my expertise in...",
-          status: "draft",
-          sentAt: null,
-          scheduledFor: null,
-          openedAt: null,
-          repliedAt: null,
-        },
-      ],
-      lastContactedAt: null,
-      nextFollowUpAt: null,
-      createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-    },
-    {
-      id: "demo-3",
-      showName: "Wellness Warriors",
-      hostName: "Lisa Chen",
-      primaryEmail: "lisa@wellnesswarriors.com",
-      tier: "TIER_1",
-      status: "responded",
-      responseType: "interested_not_booked",
-      emailSequence: [
-        {
-          id: "email-3",
-          type: "initial",
-          subject: "Podcast guest pitch",
-          body: "Hi Lisa, Your recent episode on holistic health really resonated with me...",
-          status: "replied",
-          sentAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
-          scheduledFor: null,
-          openedAt: new Date(Date.now() - 9 * 24 * 60 * 60 * 1000).toISOString(),
-          repliedAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-      ],
-      lastContactedAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
-      nextFollowUpAt: null,
-      createdAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(),
-    },
-    {
-      id: "demo-4",
-      showName: "Dad Life Podcast",
-      hostName: "James Miller",
-      primaryEmail: "james@dadlifepod.com",
-      tier: "TIER_1",
-      status: "booked",
-      responseType: "booked",
-      emailSequence: [
-        {
-          id: "email-4",
-          type: "initial",
-          subject: "Would love to be a guest on Dad Life",
-          body: "Hey James, As a fellow dad, I really connected with your episode about...",
-          status: "replied",
-          sentAt: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString(),
-          scheduledFor: null,
-          openedAt: new Date(Date.now() - 19 * 24 * 60 * 60 * 1000).toISOString(),
-          repliedAt: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-      ],
-      lastContactedAt: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString(),
-      nextFollowUpAt: null,
-      createdAt: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000).toISOString(),
-    },
-    {
-      id: "demo-5",
-      showName: "Fitness Revolution",
-      hostName: "Alex Rodriguez",
-      primaryEmail: "alex@fitnessrev.com",
-      tier: "TIER_2",
-      status: "follow_up_due",
-      responseType: "no_response",
-      emailSequence: [
-        {
-          id: "email-5",
-          type: "initial",
-          subject: "Guest opportunity",
-          body: "Hi Alex, I've been a fan of your science-based approach to fitness...",
-          status: "sent",
-          sentAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
-          scheduledFor: null,
-          openedAt: null,
-          repliedAt: null,
-        },
-      ],
-      lastContactedAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
-      nextFollowUpAt: new Date().toISOString(),
-      createdAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
-    },
-  ];
-}
-
-// Get or initialize in-memory campaigns
-export function getInMemoryCampaigns(): OutreachCampaign[] {
-  if (!globalForCampaigns.inMemoryCampaigns) {
-    globalForCampaigns.inMemoryCampaigns = getInitialDemoData();
-  }
-  return globalForCampaigns.inMemoryCampaigns;
-}
-
-// Update a campaign in memory
-export function updateInMemoryCampaign(id: string, updates: Partial<OutreachCampaign>): boolean {
-  const campaigns = getInMemoryCampaigns();
-  const index = campaigns.findIndex(c => c.id === id);
-  if (index !== -1) {
-    campaigns[index] = { ...campaigns[index], ...updates };
-    return true;
-  }
-  return false;
 }
 
 // Map database status to outreach stage
@@ -240,7 +88,7 @@ export async function GET() {
   try {
     if (!isPrismaAvailable()) {
       // Return in-memory data for demo
-      return NextResponse.json({ campaigns: getInMemoryCampaigns() });
+      return NextResponse.json({ campaigns: getDemoCampaigns() });
     }
 
     // Fetch from database
@@ -342,7 +190,7 @@ export async function GET() {
     return NextResponse.json({ campaigns });
   } catch (error) {
     console.error("Error fetching campaigns:", error);
-    return NextResponse.json({ campaigns: getInMemoryCampaigns() });
+    return NextResponse.json({ campaigns: getDemoCampaigns() });
   }
 }
 

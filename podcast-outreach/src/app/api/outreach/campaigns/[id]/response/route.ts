@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, isPrismaAvailable } from "@/lib/db";
-import { updateInMemoryCampaign } from "../../route";
+import { updateDemoCampaign } from "@/lib/demo-campaigns";
 
 // Map response type to database fields
 function mapResponseToDbFields(responseType: string) {
@@ -96,7 +96,7 @@ export async function POST(
         }
       }
 
-      updateInMemoryCampaign(id, updates);
+      updateDemoCampaign(id, updates);
 
       return NextResponse.json({
         success: true,
