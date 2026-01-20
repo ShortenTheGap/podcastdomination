@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, isPrismaAvailable } from "@/lib/db";
+import { updateInMemoryCampaign } from "../../route";
 
 // Map response type to database fields
 function mapResponseToDbFields(responseType: string) {
@@ -78,6 +79,25 @@ export async function POST(
     }
 
     if (!isPrismaAvailable()) {
+      // Update in-memory storage for demo mode
+      const updates: { status?: string; responseType?: string } = {};
+      if (stage) {
+        updates.status = stage;
+      }
+      if (responseType) {
+        updates.responseType = responseType;
+        // Also update status based on response type
+        if (responseType === "booked") {
+          updates.status = "booked";
+        } else if (responseType === "not_interested" || responseType === "opted_out") {
+          updates.status = "closed";
+        } else if (responseType === "interested_not_booked") {
+          updates.status = "responded";
+        }
+      }
+
+      updateInMemoryCampaign(id, updates);
+
       return NextResponse.json({
         success: true,
         message: "Updated (demo mode)",
