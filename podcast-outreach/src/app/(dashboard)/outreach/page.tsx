@@ -569,11 +569,11 @@ function PodcastOutreachDetail({
   const [selectedResponse, setSelectedResponse] = useState<ResponseType | null>(podcast.responseType);
 
   const updateResponse = useMutation({
-    mutationFn: async (response: ResponseType) => {
+    mutationFn: async (response: ResponseType | null) => {
       const res = await fetch(`/api/outreach/campaigns/${podcast.id}/response`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ responseType: response }),
+        body: JSON.stringify({ responseType: response, clearResponse: response === null }),
       });
       if (!res.ok) throw new Error("Failed to update");
       return res.json();
@@ -584,8 +584,10 @@ function PodcastOutreachDetail({
   });
 
   const handleResponseChange = (response: ResponseType) => {
-    setSelectedResponse(response);
-    updateResponse.mutate(response);
+    // Toggle off if clicking the same option
+    const newValue = selectedResponse === response ? null : response;
+    setSelectedResponse(newValue);
+    updateResponse.mutate(newValue);
   };
 
   return (

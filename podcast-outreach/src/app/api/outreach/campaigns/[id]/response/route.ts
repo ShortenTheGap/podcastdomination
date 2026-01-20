@@ -72,19 +72,22 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const { responseType, stage } = await request.json();
+    const { responseType, stage, clearResponse } = await request.json();
 
-    if (!responseType && !stage) {
+    if (!responseType && !stage && !clearResponse) {
       return NextResponse.json({ error: "Response type or stage required" }, { status: 400 });
     }
 
     if (!isPrismaAvailable()) {
       // Update in-memory storage for demo mode
-      const updates: { status?: string; responseType?: string } = {};
+      const updates: { status?: string; responseType?: string | null } = {};
       if (stage) {
         updates.status = stage;
       }
-      if (responseType) {
+      if (clearResponse) {
+        // Clear the response type
+        updates.responseType = null;
+      } else if (responseType) {
         updates.responseType = responseType;
         // Also update status based on response type
         if (responseType === "booked") {
@@ -112,6 +115,12 @@ export async function POST(
     if (stage) {
       updateData = mapStageToDbStatus(stage);
       noteContent = `Stage changed to: ${stage}`;
+    } else if (clearResponse) {
+      updateData = {
+        replyType: null,
+        outcome: "OPEN",
+      };
+      noteContent = "Response status cleared";
     } else if (responseType) {
       updateData = {
         ...mapResponseToDbFields(responseType),
