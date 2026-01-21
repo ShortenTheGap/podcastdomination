@@ -115,7 +115,7 @@ type ResponseType = "no_response" | "not_interested" | "interested_not_booked" |
 const PIPELINE_STAGES: { id: OutreachStage; label: string; color: string; icon: React.ReactNode }[] = [
   { id: "not_started", label: "Not Started", color: "bg-[#ead7a5]", icon: <Clock className="h-4 w-4" /> },
   { id: "drafting", label: "Drafting", color: "bg-[#0a9396]/20", icon: <Edit className="h-4 w-4" /> },
-  { id: "ready_to_send", label: "Ready to Send", color: "bg-[#ed9b05]/30", icon: <Mail className="h-4 w-4" /> },
+  { id: "ready_to_send", label: "Sent - Awaiting Response", color: "bg-[#ed9b05]/30", icon: <Mail className="h-4 w-4" /> },
   { id: "sent_awaiting", label: "Awaiting Response", color: "bg-[#006073]/20", icon: <Send className="h-4 w-4" /> },
   { id: "follow_up_due", label: "Follow-up Due", color: "bg-[#cb6701]/30", icon: <RefreshCw className="h-4 w-4" /> },
   { id: "responded", label: "Responded", color: "bg-[#94d2bd]/50", icon: <MessageSquare className="h-4 w-4" /> },
@@ -1203,7 +1203,7 @@ function EmailSequenceTimeline({
         onUpdateCampaign(podcast.id, {
           emailSequence: newSequence,
           lastContactedAt: new Date().toISOString(),
-          status: "sent_awaiting" as OutreachStage,
+          status: "ready_to_send" as OutreachStage,
         });
       }
     } catch (error) {
@@ -1300,12 +1300,12 @@ function EmailSequenceTimeline({
           return email;
         });
 
-        // Update campaign: mark as sent_awaiting and set next follow-up date
+        // Update campaign: mark as ready_to_send (now "Sent - Awaiting Response") and set next follow-up date
         onUpdateCampaign(podcast.id, {
           emailSequence: newSequence,
           lastContactedAt: now.toISOString(),
           nextFollowUpAt: followUp1Date.toISOString(),
-          status: "sent_awaiting" as OutreachStage,
+          status: "ready_to_send" as OutreachStage,
         });
       }
     } catch (error) {
