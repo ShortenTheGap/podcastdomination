@@ -24,6 +24,39 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+// LocalStorage key for backup persistence
+const CAMPAIGNS_STORAGE_KEY = "outreach-campaigns-backup";
+
+// Save campaigns to localStorage as backup
+function saveToLocalStorage(campaigns: OutreachPodcast[]): void {
+  try {
+    localStorage.setItem(CAMPAIGNS_STORAGE_KEY, JSON.stringify({
+      campaigns,
+      savedAt: new Date().toISOString(),
+    }));
+    console.log("[LocalStorage] Backed up", campaigns.length, "campaigns");
+  } catch (e) {
+    console.warn("[LocalStorage] Failed to save backup:", e);
+  }
+}
+
+// Load campaigns from localStorage backup
+function loadFromLocalStorage(): OutreachPodcast[] | null {
+  try {
+    const stored = localStorage.getItem(CAMPAIGNS_STORAGE_KEY);
+    if (stored) {
+      const data = JSON.parse(stored);
+      if (data.campaigns && Array.isArray(data.campaigns) && data.campaigns.length > 0) {
+        console.log("[LocalStorage] Restored", data.campaigns.length, "campaigns from backup (saved at", data.savedAt, ")");
+        return data.campaigns;
+      }
+    }
+  } catch (e) {
+    console.warn("[LocalStorage] Failed to load backup:", e);
+  }
+  return null;
+}
+
 // Types for the outreach system
 interface OutreachPodcast {
   id: string;
@@ -144,11 +177,27 @@ export default function OutreachPage() {
     refetchOnReconnect: true,
   });
 
-  // Initialize campaigns from server data
+  // Initialize campaigns from server data OR localStorage backup
   useEffect(() => {
     if (outreachData?.campaigns && outreachData.campaigns.length > 0) {
+      // Server has data - use it and backup to localStorage
       setLocalCampaigns(outreachData.campaigns);
       setLastSyncTime(new Date());
+      saveToLocalStorage(outreachData.campaigns);
+    } else if (outreachData?.campaigns && outreachData.campaigns.length === 0) {
+      // Server returned empty - check localStorage backup
+      const backupCampaigns = loadFromLocalStorage();
+      if (backupCampaigns && backupCampaigns.length > 0) {
+        console.log("[Recovery] Server empty, restoring from localStorage backup");
+        setLocalCampaigns(backupCampaigns);
+        // Sync backup to server to restore data
+        syncCampaignsToServer(backupCampaigns).then(success => {
+          if (success) {
+            console.log("[Recovery] Successfully restored campaigns to server");
+            setLastSyncTime(new Date());
+          }
+        });
+      }
     }
   }, [outreachData]);
 
@@ -157,6 +206,9 @@ export default function OutreachPage() {
   const scheduleSync = useCallback((campaigns: OutreachPodcast[]) => {
     // Always update the pending campaigns to the latest
     pendingCampaignsRef.current = campaigns;
+
+    // Immediately save to localStorage as backup (no debounce for local backup)
+    saveToLocalStorage(campaigns);
 
     // Clear any existing timer
     if (syncTimerRef.current) {
