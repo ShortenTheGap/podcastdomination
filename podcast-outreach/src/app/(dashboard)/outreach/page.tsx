@@ -128,7 +128,7 @@ const PIPELINE_STAGES: { id: OutreachStage; label: string; color: string; icon: 
   { id: "not_started", label: "Not Started", color: "bg-[#ead7a5]", icon: <Clock className="h-4 w-4" /> },
   { id: "drafting", label: "Drafting", color: "bg-[#0a9396]/20", icon: <Edit className="h-4 w-4" /> },
   { id: "ready_to_send", label: "Sent - Awaiting Response", color: "bg-[#ed9b05]/30", icon: <Mail className="h-4 w-4" /> },
-  { id: "follow_up_due", label: "Follow-up Due", color: "bg-[#cb6701]/30", icon: <RefreshCw className="h-4 w-4" /> },
+  { id: "follow_up_due", label: "Manual Follow Up", color: "bg-[#cb6701]/30", icon: <RefreshCw className="h-4 w-4" /> },
   { id: "responded", label: "Responded", color: "bg-[#94d2bd]/50", icon: <MessageSquare className="h-4 w-4" /> },
   { id: "booked", label: "Booked", color: "bg-[#94d2bd]", icon: <CheckCircle className="h-4 w-4" /> },
   { id: "closed", label: "Closed", color: "bg-[#006073]/30", icon: <Archive className="h-4 w-4" /> },
@@ -1516,7 +1516,7 @@ function EmailSequenceTimeline({
                       )}
                     </div>
 
-                    {email.status === "draft" && (
+                    {(email.status === "draft" || email.status === "scheduled") && (
                       <div className="flex gap-2 mt-3">
                         <button
                           onClick={() => onEditEmail(email)}
