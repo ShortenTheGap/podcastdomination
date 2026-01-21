@@ -1,17 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { findEmail, type EmailFinderResult } from "@/lib/email-finder";
 
 /**
  * POST /api/email-finder - Find email for a podcast host
- * Uses various methods to find the email:
+ *
+ * Uses a robust multi-source approach:
  * 1. Check if already stored in database
- * 2. Try to extract from podcast website
- * 3. Use email finder services (Hunter.io, etc.)
+ * 2. Scrape podcast website for emails (multiple pages)
+ * 3. Parse RSS feed for itunes:email
+ * 4. Use Apple Podcasts API to discover website/feed
+ * 5. Use Hunter.io API (if configured)
+ * 6. Generate common email patterns as last resort
+ *
+ * This approach maximizes the chances of finding valid contact emails
+ * even when some information is missing.
  */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { podcastId, hostName, showName, websiteUrl } = body;
+    const { podcastId, hostName, showName, websiteUrl, applePodcastUrl, rssUrl } = body;
 
     if (!podcastId) {
       return NextResponse.json(
@@ -20,7 +28,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get podcast from database to check current email
+    // Get podcast from database
     const podcast = await db.podcast.findUnique({
       where: { id: podcastId },
     });
@@ -32,173 +40,155 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // If email already exists, return it
-    if (podcast.primaryEmail) {
+    // If email already exists and we're not forcing a refresh, return it
+    if (podcast.primaryEmail && !body.forceRefresh) {
       return NextResponse.json({
         success: true,
         email: podcast.primaryEmail,
         source: "database",
+        sourceUrl: podcast.primaryEmailSourceUrl,
         message: "Email already exists in database",
+        confidence: 1.0,
       });
     }
 
-    // Try to find email using various methods
-    let foundEmail: string | null = null;
-    let source = "not_found";
+    console.log("[Email Finder] Starting search for podcast:", podcast.showName);
 
-    // Method 1: Check for email patterns in podcast description or website
-    // This is a placeholder for more sophisticated email finding logic
+    // Use the comprehensive email finder
+    const result: EmailFinderResult = await findEmail({
+      podcastId,
+      hostName: hostName || podcast.hostName || undefined,
+      showName: showName || podcast.showName,
+      websiteUrl: websiteUrl || podcast.websiteUrl || undefined,
+      applePodcastUrl: applePodcastUrl || podcast.applePodcastUrl || undefined,
+      rssUrl: rssUrl || undefined,
+      existingEmail: body.forceRefresh ? undefined : podcast.primaryEmail || undefined,
+    });
 
-    // Method 2: Try Hunter.io API if configured
-    const hunterApiKey = process.env.HUNTER_API_KEY;
-    console.log("[Email Finder] Hunter API key configured:", !!hunterApiKey);
-    console.log("[Email Finder] Website URL:", websiteUrl);
-    console.log("[Email Finder] Host name:", hostName);
+    console.log("[Email Finder] Result:", {
+      email: result.email,
+      source: result.source,
+      confidence: result.confidence,
+      alternateCount: result.alternateEmails?.length || 0,
+    });
 
-    if (hunterApiKey && websiteUrl) {
-      try {
-        // Extract domain from website URL
-        const domain = new URL(websiteUrl).hostname.replace("www.", "");
-        console.log("[Email Finder] Extracted domain:", domain);
+    // If we found an email, update the database
+    if (result.email && result.source !== "not_found") {
+      const updateData: Record<string, unknown> = {
+        primaryEmail: result.email,
+        primaryEmailSourceUrl: result.sourceUrl || null,
+      };
 
-        // Use Hunter.io domain search
-        const hunterUrl = `https://api.hunter.io/v2/domain-search?domain=${domain}&api_key=${hunterApiKey}&limit=5`;
-        console.log("[Email Finder] Calling Hunter.io domain-search...");
-        const hunterRes = await fetch(hunterUrl);
-
-        console.log("[Email Finder] Hunter.io response status:", hunterRes.status);
-
-        if (hunterRes.ok) {
-          const hunterData = await hunterRes.json();
-          console.log("[Email Finder] Hunter.io emails found:", hunterData.data?.emails?.length || 0);
-
-          if (hunterData.data?.emails?.length > 0) {
-            // Find the most relevant email (prefer based on host name if provided)
-            const emails = hunterData.data.emails;
-
-            if (hostName) {
-              // Try to find email matching host name
-              const hostFirstName = hostName.split(" ")[0]?.toLowerCase();
-              const matchingEmail = emails.find((e: any) =>
-                e.first_name?.toLowerCase() === hostFirstName ||
-                e.value?.toLowerCase().includes(hostFirstName)
-              );
-              if (matchingEmail) {
-                foundEmail = matchingEmail.value;
-                source = "hunter.io";
-              }
-            }
-
-            // If no match by name, use the first email
-            if (!foundEmail && emails[0]?.value) {
-              foundEmail = emails[0].value;
-              source = "hunter.io";
-            }
-          }
-        } else {
-          const errorData = await hunterRes.json().catch(() => ({}));
-          console.error("[Email Finder] Hunter.io error response:", errorData);
-        }
-      } catch (hunterError) {
-        console.error("[Email Finder] Hunter.io API error:", hunterError);
+      // If we discovered a website URL, save it
+      if (result.discoveredWebsiteUrl && !podcast.websiteUrl) {
+        updateData.websiteUrl = result.discoveredWebsiteUrl;
       }
-    }
 
-    // Method 2b: Try Hunter.io email-finder endpoint if we have host name and domain but no result yet
-    if (!foundEmail && hunterApiKey && hostName && websiteUrl) {
-      try {
-        const domain = new URL(websiteUrl).hostname.replace("www.", "");
-        const nameParts = hostName.trim().split(" ");
-
-        if (nameParts.length >= 2) {
-          const firstName = nameParts[0];
-          const lastName = nameParts[nameParts.length - 1];
-
-          console.log("[Email Finder] Trying Hunter.io email-finder endpoint...");
-          const finderUrl = `https://api.hunter.io/v2/email-finder?domain=${domain}&first_name=${encodeURIComponent(firstName)}&last_name=${encodeURIComponent(lastName)}&api_key=${hunterApiKey}`;
-          const finderRes = await fetch(finderUrl);
-
-          console.log("[Email Finder] email-finder response status:", finderRes.status);
-
-          if (finderRes.ok) {
-            const finderData = await finderRes.json();
-            console.log("[Email Finder] email-finder result:", finderData.data?.email);
-
-            if (finderData.data?.email) {
-              foundEmail = finderData.data.email;
-              source = "hunter.io";
-            }
-          }
-        }
-      } catch (finderError) {
-        console.error("[Email Finder] Hunter.io email-finder error:", finderError);
+      // Save backup email if available
+      if (result.alternateEmails && result.alternateEmails.length > 0) {
+        const backup = result.alternateEmails[0];
+        updateData.backupEmail = backup.email;
+        updateData.backupEmailSourceUrl = backup.sourceUrl || null;
       }
-    }
 
-    // Method 3: Try email permutator if we have host name and domain
-    if (!foundEmail && hostName && websiteUrl) {
-      try {
-        const domain = new URL(websiteUrl).hostname.replace("www.", "");
-        const nameParts = hostName.toLowerCase().split(" ");
-
-        if (nameParts.length >= 2) {
-          const firstName = nameParts[0];
-          const lastName = nameParts[nameParts.length - 1];
-
-          // Common email patterns to try
-          const patterns = [
-            `${firstName}@${domain}`,
-            `${firstName}.${lastName}@${domain}`,
-            `${firstName}${lastName}@${domain}`,
-            `${firstName[0]}${lastName}@${domain}`,
-            `${firstName}_${lastName}@${domain}`,
-          ];
-
-          // For now, suggest the most common pattern
-          // In a production system, you would verify these
-          foundEmail = patterns[1]; // firstname.lastname@domain
-          source = "pattern_generated";
-        }
-      } catch (urlError) {
-        console.error("URL parsing error:", urlError);
-      }
-    }
-
-    // If email found, optionally update the podcast record
-    if (foundEmail) {
       await db.podcast.update({
         where: { id: podcastId },
-        data: { primaryEmail: foundEmail },
+        data: updateData,
       });
 
       return NextResponse.json({
         success: true,
-        email: foundEmail,
-        source,
-        message: `Email found via ${source}`,
+        email: result.email,
+        source: result.source,
+        sourceUrl: result.sourceUrl,
+        confidence: result.confidence,
+        message: result.message,
+        alternateEmails: result.alternateEmails,
+        discoveredWebsiteUrl: result.discoveredWebsiteUrl,
       });
     }
 
-    // No email found - provide helpful reason
-    let notFoundMessage = "Could not find email automatically. Please enter manually.";
-
-    if (!websiteUrl) {
-      notFoundMessage = "No website URL available for this podcast. Please enter email manually.";
-    } else if (!hunterApiKey) {
-      notFoundMessage = "Email finder service not configured. Please enter email manually.";
-    }
+    // No email found - provide helpful guidance
+    const suggestions = getSearchSuggestions(podcast, result);
 
     return NextResponse.json({
       success: false,
       email: null,
       source: "not_found",
-      message: notFoundMessage,
+      confidence: 0,
+      message: result.message,
+      suggestions,
+      discoveredWebsiteUrl: result.discoveredWebsiteUrl,
     });
   } catch (error) {
     console.error("Error finding email:", error);
     return NextResponse.json(
-      { error: "Failed to find email" },
+      {
+        error: "Failed to find email",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
       { status: 500 }
     );
   }
+}
+
+/**
+ * Generate helpful suggestions when email not found
+ */
+function getSearchSuggestions(
+  podcast: { websiteUrl: string | null; applePodcastUrl: string | null; showName: string },
+  result: EmailFinderResult
+): string[] {
+  const suggestions: string[] = [];
+
+  if (!podcast.websiteUrl && !result.discoveredWebsiteUrl) {
+    suggestions.push(
+      "Add the podcast's website URL to enable website scanning",
+      `Try searching Google for: "${podcast.showName}" podcast contact`
+    );
+  }
+
+  if (!podcast.applePodcastUrl) {
+    suggestions.push(
+      "Add the Apple Podcasts URL to enable RSS feed lookup"
+    );
+  }
+
+  suggestions.push(
+    "Check the podcast's social media (Twitter bio, Instagram link in bio)",
+    "Look for a 'Be a Guest' or 'Contact' page on their website",
+    "Check the show notes of recent episodes for contact info"
+  );
+
+  if (!process.env.HUNTER_API_KEY) {
+    suggestions.push(
+      "Configure Hunter.io API key for enhanced email discovery"
+    );
+  }
+
+  return suggestions;
+}
+
+/**
+ * GET /api/email-finder - Get email finder status/config
+ */
+export async function GET() {
+  const hunterConfigured = !!process.env.HUNTER_API_KEY;
+
+  return NextResponse.json({
+    methods: [
+      { name: "Website Scraping", enabled: true, description: "Scans podcast website for mailto links and email patterns" },
+      { name: "RSS Feed Parsing", enabled: true, description: "Extracts email from podcast RSS feed (itunes:email)" },
+      { name: "Apple Podcasts API", enabled: true, description: "Discovers website and RSS feed from Apple Podcasts" },
+      { name: "Hunter.io", enabled: hunterConfigured, description: "Professional email finder service" },
+      { name: "Pattern Generation", enabled: true, description: "Generates common email patterns as fallback" },
+    ],
+    tips: [
+      "Add Apple Podcasts URL for best results",
+      "Website URL enables direct scanning",
+      hunterConfigured
+        ? "Hunter.io is configured and active"
+        : "Add HUNTER_API_KEY to .env for enhanced email discovery",
+    ],
+  });
 }

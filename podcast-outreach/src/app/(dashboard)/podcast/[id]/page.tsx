@@ -39,6 +39,16 @@ export default function PodcastDetailPage({ params }: Props) {
     message: string;
     email?: string;
     source?: string;
+    sourceUrl?: string;
+    confidence?: number;
+    alternateEmails?: Array<{
+      email: string;
+      source: string;
+      sourceUrl?: string;
+      confidence: number;
+    }>;
+    suggestions?: string[];
+    discoveredWebsiteUrl?: string;
   } | null>(null);
 
   const { data: podcast, isLoading, error } = useQuery({
@@ -139,7 +149,7 @@ export default function PodcastDetailPage({ params }: Props) {
 
   // Find email mutation
   const findEmailMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (forceRefresh: boolean = false) => {
       setIsFindingEmail(true);
       const res = await fetch("/api/email-finder", {
         method: "POST",
@@ -149,6 +159,8 @@ export default function PodcastDetailPage({ params }: Props) {
           hostName: contactForm.hostName || podcast.hostName,
           showName: podcast.showName,
           websiteUrl: podcast.websiteUrl,
+          applePodcastUrl: podcast.applePodcastUrl,
+          forceRefresh: forceRefresh || false,
         }),
       });
       if (!res.ok) throw new Error("Email finder failed");
@@ -171,6 +183,11 @@ export default function PodcastDetailPage({ params }: Props) {
       });
     },
   });
+
+  // Use alternate email
+  const useAlternateEmail = (email: string) => {
+    setContactForm(prev => ({ ...prev, primaryEmail: email }));
+  };
 
   // Start outreach mutation - add to outreach page
   const startOutreachMutation = useMutation({
@@ -330,7 +347,7 @@ export default function PodcastDetailPage({ params }: Props) {
               </div>
               {/* Find Email Button */}
               <button
-                onClick={() => findEmailMutation.mutate()}
+                onClick={() => findEmailMutation.mutate(false)}
                 disabled={isFindingEmail}
                 className="inline-flex items-center gap-2 px-3 py-1.5 border border-blue-300 text-blue-600 rounded hover:bg-blue-50 text-sm"
               >
@@ -347,15 +364,78 @@ export default function PodcastDetailPage({ params }: Props) {
                 )}
               </button>
               {emailFinderResult && (
-                <div className={cn(
-                  "text-sm p-2 rounded",
-                  emailFinderResult.success ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700"
-                )}>
-                  {emailFinderResult.message}
-                  {emailFinderResult.source && emailFinderResult.source !== "database" && (
-                    <span className="text-xs ml-2 opacity-75">
-                      (Source: {emailFinderResult.source})
-                    </span>
+                <div className="space-y-2">
+                  <div className={cn(
+                    "text-sm p-3 rounded",
+                    emailFinderResult.success ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700"
+                  )}>
+                    <div className="flex items-center justify-between">
+                      <span>{emailFinderResult.message}</span>
+                      {emailFinderResult.confidence !== undefined && emailFinderResult.confidence > 0 && (
+                        <span className={cn(
+                          "text-xs px-2 py-0.5 rounded-full",
+                          emailFinderResult.confidence >= 0.8 ? "bg-green-100 text-green-800" :
+                          emailFinderResult.confidence >= 0.5 ? "bg-yellow-100 text-yellow-800" :
+                          "bg-orange-100 text-orange-800"
+                        )}>
+                          {Math.round(emailFinderResult.confidence * 100)}% confidence
+                        </span>
+                      )}
+                    </div>
+                    {emailFinderResult.sourceUrl && (
+                      <a
+                        href={emailFinderResult.sourceUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs underline opacity-75 mt-1 block"
+                      >
+                        View source
+                      </a>
+                    )}
+                  </div>
+
+                  {/* Alternate emails */}
+                  {emailFinderResult.alternateEmails && emailFinderResult.alternateEmails.length > 0 && (
+                    <div className="bg-slate-50 p-3 rounded">
+                      <p className="text-xs font-medium text-slate-600 mb-2">Other emails found:</p>
+                      <div className="space-y-1">
+                        {emailFinderResult.alternateEmails.map((alt, i) => (
+                          <div key={i} className="flex items-center justify-between text-sm">
+                            <span className="text-slate-700">{alt.email}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-slate-500">
+                                {Math.round(alt.confidence * 100)}%
+                              </span>
+                              <button
+                                onClick={() => useAlternateEmail(alt.email)}
+                                className="text-xs text-blue-600 hover:text-blue-700"
+                              >
+                                Use this
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Suggestions when not found */}
+                  {!emailFinderResult.success && emailFinderResult.suggestions && emailFinderResult.suggestions.length > 0 && (
+                    <div className="bg-blue-50 p-3 rounded">
+                      <p className="text-xs font-medium text-blue-700 mb-2">Suggestions:</p>
+                      <ul className="text-xs text-blue-600 space-y-1">
+                        {emailFinderResult.suggestions.slice(0, 4).map((suggestion, i) => (
+                          <li key={i}>• {suggestion}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Discovered website */}
+                  {emailFinderResult.discoveredWebsiteUrl && (
+                    <div className="text-xs text-green-600">
+                      Discovered website: <a href={emailFinderResult.discoveredWebsiteUrl} target="_blank" rel="noopener noreferrer" className="underline">{emailFinderResult.discoveredWebsiteUrl}</a>
+                    </div>
                   )}
                 </div>
               )}
@@ -374,7 +454,7 @@ export default function PodcastDetailPage({ params }: Props) {
                       hostName: podcast.hostName || "",
                     });
                     setIsEditingContact(true);
-                    findEmailMutation.mutate();
+                    findEmailMutation.mutate(false);
                   }}
                   disabled={isFindingEmail}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
