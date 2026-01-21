@@ -125,13 +125,30 @@ export async function GET(request: NextRequest) {
   // Generate OAuth URL
   if (action === "connect") {
     const clientId = process.env.GOOGLE_CLIENT_ID;
-    const redirectUri = process.env.GOOGLE_REDIRECT_URI || `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/gmail/callback`;
+    const configuredRedirectUri = process.env.GOOGLE_REDIRECT_URI;
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+
+    // Determine the redirect URI
+    const redirectUri = configuredRedirectUri || `${appUrl}/api/auth/gmail/callback`;
 
     if (!clientId) {
       return NextResponse.json(
-        { error: "Google OAuth not configured" },
+        { error: "Google OAuth not configured. Set GOOGLE_CLIENT_ID in environment variables." },
         { status: 500 }
       );
+    }
+
+    // Get the actual origin of this request to detect mismatches
+    const requestOrigin = request.headers.get("origin") || request.headers.get("referer")?.split("/").slice(0, 3).join("/");
+    const expectedCallbackUrl = requestOrigin ? `${requestOrigin}/api/auth/gmail/callback` : null;
+
+    // Warn about potential redirect URI mismatch
+    if (expectedCallbackUrl && redirectUri !== expectedCallbackUrl) {
+      console.warn(`[Gmail OAuth] REDIRECT URI MISMATCH DETECTED!`);
+      console.warn(`  Configured: ${redirectUri}`);
+      console.warn(`  Expected:   ${expectedCallbackUrl}`);
+      console.warn(`  This will cause "Error 400: invalid_request" from Google.`);
+      console.warn(`  Fix: Update GOOGLE_REDIRECT_URI and NEXT_PUBLIC_APP_URL in your environment variables.`);
     }
 
     const params = new URLSearchParams({
@@ -145,7 +162,19 @@ export async function GET(request: NextRequest) {
     });
 
     const authUrl = `${GOOGLE_OAUTH_URL}?${params.toString()}`;
-    return NextResponse.json({ authUrl });
+
+    // Return debug info along with auth URL
+    return NextResponse.json({
+      authUrl,
+      debug: {
+        redirectUri,
+        requestOrigin,
+        potentialMismatch: expectedCallbackUrl && redirectUri !== expectedCallbackUrl,
+        hint: expectedCallbackUrl && redirectUri !== expectedCallbackUrl
+          ? `Your redirect URI (${redirectUri}) doesn't match your app URL (${requestOrigin}). Update GOOGLE_REDIRECT_URI in Railway environment variables.`
+          : null,
+      }
+    });
   }
 
   // Disconnect

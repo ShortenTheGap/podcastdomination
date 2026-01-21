@@ -823,6 +823,24 @@ function IntegrationsTab() {
       const res = await fetch("/api/auth/gmail?action=connect");
       const data = await res.json();
 
+      // Check for redirect URI mismatch before opening popup
+      if (data.debug?.potentialMismatch) {
+        const confirmConnect = window.confirm(
+          `WARNING: Redirect URI mismatch detected!\n\n` +
+          `Your app is running at: ${window.location.origin}\n` +
+          `But redirect URI is set to: ${data.debug.redirectUri}\n\n` +
+          `This will cause "Error 400: invalid_request" from Google.\n\n` +
+          `To fix:\n` +
+          `1. Go to Railway dashboard → Variables\n` +
+          `2. Set GOOGLE_REDIRECT_URI to: ${window.location.origin}/api/auth/gmail/callback\n` +
+          `3. Set NEXT_PUBLIC_APP_URL to: ${window.location.origin}\n` +
+          `4. Redeploy the app\n` +
+          `5. Also update the redirect URI in Google Cloud Console\n\n` +
+          `Click OK to try anyway, or Cancel to fix first.`
+        );
+        if (!confirmConnect) return;
+      }
+
       if (data.authUrl) {
         // Open OAuth popup
         const popup = window.open(data.authUrl, "gmail_auth", "width=500,height=600");
@@ -845,15 +863,29 @@ function IntegrationsTab() {
                 gmail: { success: true, message: `Connected as ${tokenData.email}` },
               }));
               queryClient.invalidateQueries({ queryKey: ["integrations"] });
+            } else {
+              setTestResults((prev) => ({
+                ...prev,
+                gmail: { success: false, message: tokenData.error || "Failed to connect" },
+              }));
             }
           }
           window.removeEventListener("message", handleMessage);
         };
 
         window.addEventListener("message", handleMessage);
+      } else if (data.error) {
+        setTestResults((prev) => ({
+          ...prev,
+          gmail: { success: false, message: data.error },
+        }));
       }
     } catch (error) {
       console.error("Gmail connect error:", error);
+      setTestResults((prev) => ({
+        ...prev,
+        gmail: { success: false, message: "Failed to initiate connection" },
+      }));
     }
   };
 
