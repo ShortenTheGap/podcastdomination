@@ -183,6 +183,29 @@ export default function OutreachPage() {
   const [hasUnsyncedChanges, setHasUnsyncedChanges] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
 
+  // Toast notification state
+  const [toast, setToast] = useState<{
+    message: string;
+    type: "error" | "success" | "warning";
+    action?: { label: string; href: string };
+  } | null>(null);
+
+  // Auto-dismiss toast after 5 seconds (longer for actionable toasts)
+  useEffect(() => {
+    if (toast) {
+      const timeout = setTimeout(() => setToast(null), toast.action ? 8000 : 5000);
+      return () => clearTimeout(timeout);
+    }
+  }, [toast]);
+
+  const showToast = useCallback((
+    message: string,
+    type: "error" | "success" | "warning" = "error",
+    action?: { label: string; href: string }
+  ) => {
+    setToast({ message, type, action });
+  }, []);
+
   // Debounce timer for auto-sync
   const syncTimerRef = useRef<NodeJS.Timeout | null>(null);
   // Track pending campaigns to sync (ensures we always sync the latest)
@@ -705,7 +728,48 @@ export default function OutreachPage() {
                 : prev
             );
           }}
+          onShowToast={showToast}
         />
+      )}
+
+      {/* Toast Notification */}
+      {toast && (
+        <div
+          className={cn(
+            "fixed bottom-4 right-4 z-[100] max-w-md px-4 py-3 rounded-lg shadow-lg flex items-start gap-3",
+            toast.type === "error" && "bg-red-50 border border-red-200 text-red-800",
+            toast.type === "warning" && "bg-amber-50 border border-amber-200 text-amber-800",
+            toast.type === "success" && "bg-green-50 border border-green-200 text-green-800"
+          )}
+        >
+          <div className="flex-shrink-0 mt-0.5">
+            {toast.type === "error" && <XCircle className="h-5 w-5 text-red-500" />}
+            {toast.type === "warning" && <AlertCircle className="h-5 w-5 text-amber-500" />}
+            {toast.type === "success" && <CheckCircle className="h-5 w-5 text-green-500" />}
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-medium">{toast.message}</p>
+            {toast.action && (
+              <a
+                href={toast.action.href}
+                className={cn(
+                  "mt-2 inline-block text-sm font-medium underline",
+                  toast.type === "error" && "text-red-700 hover:text-red-900",
+                  toast.type === "warning" && "text-amber-700 hover:text-amber-900",
+                  toast.type === "success" && "text-green-700 hover:text-green-900"
+                )}
+              >
+                {toast.action.label}
+              </a>
+            )}
+          </div>
+          <button
+            onClick={() => setToast(null)}
+            className="flex-shrink-0 text-gray-400 hover:text-gray-600"
+          >
+            <XCircle className="h-4 w-4" />
+          </button>
+        </div>
       )}
     </div>
   );
@@ -970,12 +1034,14 @@ function PodcastOutreachDetail({
   onUpdate,
   onUpdateCampaign,
   onUpdateCampaignImmediate,
+  onShowToast,
 }: {
   podcast: OutreachPodcast;
   onClose: () => void;
   onUpdate: () => void;
   onUpdateCampaign: (id: string, updates: Partial<OutreachPodcast>) => void;
   onUpdateCampaignImmediate: (id: string, updates: Partial<OutreachPodcast>) => void;
+  onShowToast: (message: string, type?: "error" | "success" | "warning", action?: { label: string; href: string }) => void;
 }) {
   const [selectedResponse, setSelectedResponse] = useState<ResponseType | null>(podcast.responseType);
   const [editingEmail, setEditingEmail] = useState<EmailInSequence | null>(null);
@@ -1121,6 +1187,7 @@ function PodcastOutreachDetail({
             onViewEmail={setViewingEmail}
             onUpdateCampaign={onUpdateCampaign}
             onUpdateCampaignImmediate={onUpdateCampaignImmediate}
+            onShowToast={onShowToast}
           />
         )}
       </div>
@@ -1136,6 +1203,7 @@ function EmailSequenceTimeline({
   onViewEmail,
   onUpdateCampaign,
   onUpdateCampaignImmediate,
+  onShowToast,
 }: {
   podcast: OutreachPodcast;
   onUpdate: () => void;
@@ -1143,6 +1211,7 @@ function EmailSequenceTimeline({
   onViewEmail: (email: EmailInSequence) => void;
   onUpdateCampaign: (id: string, updates: Partial<OutreachPodcast>) => void;
   onUpdateCampaignImmediate: (id: string, updates: Partial<OutreachPodcast>) => void;
+  onShowToast: (message: string, type?: "error" | "success" | "warning", action?: { label: string; href: string }) => void;
 }) {
   const [sendingEmailId, setSendingEmailId] = useState<string | null>(null);
   const [isGeneratingSequence, setIsGeneratingSequence] = useState(false);
@@ -1320,6 +1389,21 @@ function EmailSequenceTimeline({
 
     setIsStartingCampaign(true);
     try {
+      // First, check if Gmail integration is connected
+      const integrationRes = await fetch("/api/integrations");
+      if (integrationRes.ok) {
+        const { integrations } = await integrationRes.json();
+        if (!integrations?.gmail?.hasOAuthToken) {
+          onShowToast(
+            "Gmail is not connected. Please connect your Gmail account to send emails.",
+            "error",
+            { label: "Go to Settings →", href: "/settings" }
+          );
+          setIsStartingCampaign(false);
+          return;
+        }
+      }
+
       // Load email settings from localStorage for follow-up timing
       let emailSettings = {
         followUp1Days: 5,
@@ -1406,9 +1490,22 @@ function EmailSequenceTimeline({
           nextFollowUpAt: followUp1Date.toISOString(),
           status: "ready_to_send" as OutreachStage,
         });
+
+        // Show success toast
+        onShowToast("Campaign started! Initial email sent.", "success");
+      } else {
+        // API returned an error
+        onShowToast("Failed to send email. Please check your Gmail connection.", "error", {
+          label: "Go to Settings →",
+          href: "/settings"
+        });
       }
     } catch (error) {
       console.error("Failed to start campaign:", error);
+      onShowToast(
+        "Failed to start campaign. Please try again.",
+        "error"
+      );
     }
     setIsStartingCampaign(false);
   };
