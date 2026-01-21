@@ -3,6 +3,7 @@
 import { use, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   ExternalLink,
@@ -16,8 +17,9 @@ import {
   Sparkles,
   CheckCircle,
   AlertTriangle,
-  Send,
   RotateCcw,
+  Search,
+  Send,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -28,11 +30,16 @@ interface Props {
 export default function PodcastDetailPage({ params }: Props) {
   const { id } = use(params);
   const queryClient = useQueryClient();
-  const [isEditingEmail, setIsEditingEmail] = useState(false);
+  const router = useRouter();
   const [isEditingContact, setIsEditingContact] = useState(false);
-  const [emailDraft, setEmailDraft] = useState("");
-  const [emailSubject, setEmailSubject] = useState("");
   const [contactForm, setContactForm] = useState({ primaryEmail: "", hostName: "" });
+  const [isFindingEmail, setIsFindingEmail] = useState(false);
+  const [emailFinderResult, setEmailFinderResult] = useState<{
+    success: boolean;
+    message: string;
+    email?: string;
+    source?: string;
+  } | null>(null);
 
   const { data: podcast, isLoading, error } = useQuery({
     queryKey: ["podcast", id],
@@ -44,15 +51,7 @@ export default function PodcastDetailPage({ params }: Props) {
     staleTime: 0,
   });
 
-  // Initialize email state when podcast loads
-  useState(() => {
-    if (podcast) {
-      setEmailDraft(podcast.emailDraft || "");
-      setEmailSubject(podcast.emailSubject || "");
-    }
-  });
-
-  // Analyze & Draft mutation
+  // Analyze & Draft mutation (just for analysis, no drafting)
   const analyzeMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch(`/api/podcasts/${id}/analyze-and-draft`, {
@@ -62,50 +61,6 @@ export default function PodcastDetailPage({ params }: Props) {
         const err = await res.json();
         throw new Error(err.error || "Analysis failed");
       }
-      return res.json();
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["podcast", id] });
-      queryClient.invalidateQueries({ queryKey: ["podcasts"] });
-      if (data.emailBody) {
-        setEmailDraft(data.emailBody);
-        setEmailSubject(data.emailSubject || "");
-      }
-    },
-  });
-
-  // Save email draft
-  const saveDraftMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch(`/api/podcasts/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          emailDraft,
-          emailSubject,
-        }),
-      });
-      if (!res.ok) throw new Error("Failed to save");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["podcast", id] });
-      setIsEditingEmail(false);
-    },
-  });
-
-  // Mark as sent
-  const sendMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch(`/api/podcasts/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: "SENT",
-          sentPrimaryAt: new Date().toISOString(),
-        }),
-      });
-      if (!res.ok) throw new Error("Failed to update");
       return res.json();
     },
     onSuccess: () => {
@@ -152,6 +107,7 @@ export default function PodcastDetailPage({ params }: Props) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["podcast", id] });
       setIsEditingContact(false);
+      setEmailFinderResult(null);
     },
   });
 
@@ -175,13 +131,70 @@ export default function PodcastDetailPage({ params }: Props) {
       if (!res.ok) throw new Error("Analysis failed");
       return res.json();
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["podcast", id] });
       queryClient.invalidateQueries({ queryKey: ["podcasts"] });
-      if (data.emailBody) {
-        setEmailDraft(data.emailBody);
-        setEmailSubject(data.emailSubject || "");
+    },
+  });
+
+  // Find email mutation
+  const findEmailMutation = useMutation({
+    mutationFn: async () => {
+      setIsFindingEmail(true);
+      const res = await fetch("/api/email-finder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          podcastId: id,
+          hostName: podcast.hostName,
+          showName: podcast.showName,
+          websiteUrl: podcast.websiteUrl,
+        }),
+      });
+      if (!res.ok) throw new Error("Email finder failed");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setEmailFinderResult(data);
+      if (data.success && data.email) {
+        setContactForm(prev => ({ ...prev, primaryEmail: data.email }));
+        // Refresh podcast data to get updated email
+        queryClient.invalidateQueries({ queryKey: ["podcast", id] });
       }
+      setIsFindingEmail(false);
+    },
+    onError: () => {
+      setIsFindingEmail(false);
+      setEmailFinderResult({
+        success: false,
+        message: "Failed to search for email. Please enter manually.",
+      });
+    },
+  });
+
+  // Start outreach mutation - add to outreach page
+  const startOutreachMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/outreach/campaigns/add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          podcastId: id,
+          showName: podcast.showName,
+          hostName: podcast.hostName,
+          primaryEmail: podcast.primaryEmail,
+          tier: podcast.tier || "TIER_2",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to start outreach");
+      }
+      return data;
+    },
+    onSuccess: () => {
+      // Navigate to outreach page
+      router.push("/outreach");
     },
   });
 
@@ -286,7 +299,10 @@ export default function PodcastDetailPage({ params }: Props) {
                   {updateContactMutation.isPending ? "Saving..." : "Save"}
                 </button>
                 <button
-                  onClick={() => setIsEditingContact(false)}
+                  onClick={() => {
+                    setIsEditingContact(false);
+                    setEmailFinderResult(null);
+                  }}
                   className="text-sm text-slate-500"
                 >
                   Cancel
@@ -295,26 +311,87 @@ export default function PodcastDetailPage({ params }: Props) {
             )}
           </div>
           {isEditingContact ? (
-            <div className="grid grid-cols-2 gap-4">
-              <input
-                type="text"
-                value={contactForm.hostName}
-                onChange={(e) => setContactForm({ ...contactForm, hostName: e.target.value })}
-                placeholder="Host name"
-                className="border border-slate-300 rounded px-3 py-2 text-sm"
-              />
-              <input
-                type="email"
-                value={contactForm.primaryEmail}
-                onChange={(e) => setContactForm({ ...contactForm, primaryEmail: e.target.value })}
-                placeholder="Email address"
-                className="border border-slate-300 rounded px-3 py-2 text-sm"
-              />
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-4">
+                <input
+                  type="text"
+                  value={contactForm.hostName}
+                  onChange={(e) => setContactForm({ ...contactForm, hostName: e.target.value })}
+                  placeholder="Host name"
+                  className="border border-slate-300 rounded px-3 py-2 text-sm"
+                />
+                <input
+                  type="email"
+                  value={contactForm.primaryEmail}
+                  onChange={(e) => setContactForm({ ...contactForm, primaryEmail: e.target.value })}
+                  placeholder="Email address"
+                  className="border border-slate-300 rounded px-3 py-2 text-sm"
+                />
+              </div>
+              {/* Find Email Button */}
+              <button
+                onClick={() => findEmailMutation.mutate()}
+                disabled={isFindingEmail}
+                className="inline-flex items-center gap-2 px-3 py-1.5 border border-blue-300 text-blue-600 rounded hover:bg-blue-50 text-sm"
+              >
+                {isFindingEmail ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Searching...
+                  </>
+                ) : (
+                  <>
+                    <Search className="h-4 w-4" />
+                    Find Email
+                  </>
+                )}
+              </button>
+              {emailFinderResult && (
+                <div className={cn(
+                  "text-sm p-2 rounded",
+                  emailFinderResult.success ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700"
+                )}>
+                  {emailFinderResult.message}
+                  {emailFinderResult.source && emailFinderResult.source !== "database" && (
+                    <span className="text-xs ml-2 opacity-75">
+                      (Source: {emailFinderResult.source})
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           ) : (
-            <div className="flex items-center gap-2 text-sm text-slate-600">
-              <Mail className="h-4 w-4 text-slate-400" />
-              {podcast.primaryEmail || "No email added"}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm text-slate-600">
+                <Mail className="h-4 w-4 text-slate-400" />
+                {podcast.primaryEmail || "No email added"}
+              </div>
+              {!podcast.primaryEmail && (
+                <button
+                  onClick={() => {
+                    setContactForm({
+                      primaryEmail: "",
+                      hostName: podcast.hostName || "",
+                    });
+                    setIsEditingContact(true);
+                    findEmailMutation.mutate();
+                  }}
+                  disabled={isFindingEmail}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+                >
+                  {isFindingEmail ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Finding...
+                    </>
+                  ) : (
+                    <>
+                      <Search className="h-4 w-4" />
+                      Find Email
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -331,7 +408,7 @@ export default function PodcastDetailPage({ params }: Props) {
             Ready to Analyze
           </h2>
           <p className="text-slate-500 mb-6 max-w-md mx-auto">
-            AI will evaluate if this podcast is a good fit and draft a personalized outreach email.
+            AI will evaluate if this podcast is a good fit for your outreach.
           </p>
           <button
             onClick={() => analyzeMutation.mutate()}
@@ -346,7 +423,7 @@ export default function PodcastDetailPage({ params }: Props) {
             ) : (
               <>
                 <Sparkles className="h-5 w-5" />
-                Analyze & Draft
+                Analyze Podcast
               </>
             )}
           </button>
@@ -365,7 +442,7 @@ export default function PodcastDetailPage({ params }: Props) {
                 </div>
                 <div>
                   <h3 className="font-semibold text-red-900">Not a Fit</h3>
-                  <p className="text-sm text-red-700">AI determined this podcast isn't suitable for outreach</p>
+                  <p className="text-sm text-red-700">AI determined this podcast isn&apos;t suitable for outreach</p>
                 </div>
               </div>
               {analysis?.fitScore !== undefined && (
@@ -429,7 +506,7 @@ export default function PodcastDetailPage({ params }: Props) {
           </div>
         </div>
       ) : isSent ? (
-        // Already sent
+        // Already in outreach
         <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
           <div className="bg-purple-50 px-6 py-4 border-b border-purple-200">
             <div className="flex items-center gap-3">
@@ -437,28 +514,25 @@ export default function PodcastDetailPage({ params }: Props) {
                 <Send className="h-6 w-6 text-purple-600" />
               </div>
               <div>
-                <h3 className="font-semibold text-purple-900">Email Sent</h3>
+                <h3 className="font-semibold text-purple-900">Outreach Started</h3>
                 <p className="text-sm text-purple-700">
-                  Sent on {new Date(podcast.sentPrimaryAt).toLocaleDateString()}
+                  This podcast is in your outreach pipeline
                 </p>
               </div>
             </div>
           </div>
           <div className="p-6">
-            <div className="mb-4">
-              <p className="text-sm font-medium text-slate-700 mb-1">Subject</p>
-              <p className="text-slate-900">{podcast.emailSubject}</p>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-slate-700 mb-1">Email</p>
-              <div className="bg-slate-50 rounded-lg p-4 whitespace-pre-wrap text-slate-700 font-mono text-sm">
-                {podcast.emailDraft}
-              </div>
-            </div>
+            <Link
+              href="/outreach"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+            >
+              <Send className="h-4 w-4" />
+              View in Outreach
+            </Link>
           </div>
         </div>
       ) : isReady || isGoodFit ? (
-        // Good fit - show email draft
+        // Good fit - show action buttons
         <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
           {/* Analysis Summary */}
           <div className="bg-green-50 px-6 py-4 border-b border-green-200">
@@ -487,99 +561,44 @@ export default function PodcastDetailPage({ params }: Props) {
             </div>
           </div>
 
-          {/* Email Draft */}
+          {/* Action Buttons */}
           <div className="p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-slate-900">Email Draft</h3>
-              {!isEditingEmail ? (
-                <button
-                  onClick={() => {
-                    setEmailDraft(podcast.emailDraft || "");
-                    setEmailSubject(podcast.emailSubject || "");
-                    setIsEditingEmail(true);
-                  }}
-                  className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
-                >
-                  <Edit2 className="h-3 w-3" />
-                  Edit
-                </button>
-              ) : (
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => saveDraftMutation.mutate()}
-                    disabled={saveDraftMutation.isPending}
-                    className="text-sm text-green-600 hover:text-green-700 flex items-center gap-1"
-                  >
-                    {saveDraftMutation.isPending ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <Save className="h-3 w-3" />
-                    )}
-                    Save
-                  </button>
-                  <button
-                    onClick={() => setIsEditingEmail(false)}
-                    className="text-sm text-slate-500"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              )}
-            </div>
+            <h3 className="font-semibold text-slate-900 mb-4">Ready for Outreach</h3>
 
-            {/* Subject */}
-            <div className="mb-4">
-              <label className="text-sm font-medium text-slate-700 block mb-1">Subject</label>
-              {isEditingEmail ? (
-                <input
-                  type="text"
-                  value={emailSubject}
-                  onChange={(e) => setEmailSubject(e.target.value)}
-                  className="w-full border border-slate-300 rounded px-3 py-2"
-                />
-              ) : (
-                <p className="text-slate-900">{podcast.emailSubject || "No subject"}</p>
-              )}
-            </div>
+            {/* Email Status */}
+            {!podcast.primaryEmail && (
+              <div className="flex items-center gap-2 text-amber-600 mb-4 p-3 bg-amber-50 rounded-lg">
+                <AlertTriangle className="h-5 w-5" />
+                <span className="text-sm">Find or add an email address before starting outreach</span>
+              </div>
+            )}
 
-            {/* Body */}
-            <div className="mb-6">
-              <label className="text-sm font-medium text-slate-700 block mb-1">Message</label>
-              {isEditingEmail ? (
-                <textarea
-                  value={emailDraft}
-                  onChange={(e) => setEmailDraft(e.target.value)}
-                  rows={12}
-                  className="w-full border border-slate-300 rounded px-3 py-2 font-mono text-sm"
-                />
-              ) : (
-                <div className="bg-slate-50 rounded-lg p-4 whitespace-pre-wrap text-slate-700 font-mono text-sm">
-                  {podcast.emailDraft || "No draft yet"}
-                </div>
-              )}
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex gap-3 pt-4 border-t border-slate-200">
-              {!podcast.primaryEmail ? (
-                <div className="flex items-center gap-2 text-amber-600">
-                  <AlertTriangle className="h-4 w-4" />
-                  <span className="text-sm">Add an email address above before sending</span>
-                </div>
-              ) : (
-                <button
-                  onClick={() => sendMutation.mutate()}
-                  disabled={sendMutation.isPending}
-                  className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
-                >
-                  {sendMutation.isPending ? (
+            <div className="flex gap-3">
+              {/* Start Outreach Button */}
+              <button
+                onClick={() => startOutreachMutation.mutate()}
+                disabled={startOutreachMutation.isPending || !podcast.primaryEmail}
+                className={cn(
+                  "flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 rounded-lg",
+                  podcast.primaryEmail
+                    ? "bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+                    : "bg-slate-300 text-slate-500 cursor-not-allowed"
+                )}
+              >
+                {startOutreachMutation.isPending ? (
+                  <>
                     <Loader2 className="h-5 w-5 animate-spin" />
-                  ) : (
+                    Starting...
+                  </>
+                ) : (
+                  <>
                     <Send className="h-5 w-5" />
-                  )}
-                  Mark as Sent
-                </button>
-              )}
+                    Start Outreach
+                  </>
+                )}
+              </button>
+
+              {/* Skip Button */}
               <button
                 onClick={() => skipMutation.mutate()}
                 disabled={skipMutation.isPending}
@@ -592,6 +611,12 @@ export default function PodcastDetailPage({ params }: Props) {
                 )}
               </button>
             </div>
+
+            {startOutreachMutation.isError && (
+              <p className="mt-4 text-red-600 text-sm">
+                {startOutreachMutation.error.message}
+              </p>
+            )}
           </div>
         </div>
       ) : null}
@@ -610,12 +635,12 @@ export default function PodcastDetailPage({ params }: Props) {
 function StatusBadge({ status }: { status: string }) {
   const config: Record<string, { label: string; color: string }> = {
     NOT_CONTACTED: { label: "New", color: "bg-slate-100 text-slate-700" },
-    READY: { label: "Ready to Send", color: "bg-green-100 text-green-700" },
-    READY_TO_DRAFT: { label: "Ready to Send", color: "bg-green-100 text-green-700" },
-    DRAFTED: { label: "Ready to Send", color: "bg-green-100 text-green-700" },
-    QA_APPROVED: { label: "Ready to Send", color: "bg-green-100 text-green-700" },
+    READY: { label: "Ready", color: "bg-green-100 text-green-700" },
+    READY_TO_DRAFT: { label: "Ready", color: "bg-green-100 text-green-700" },
+    DRAFTED: { label: "Ready", color: "bg-green-100 text-green-700" },
+    QA_APPROVED: { label: "Ready", color: "bg-green-100 text-green-700" },
     SKIPPED: { label: "Skipped", color: "bg-red-100 text-red-700" },
-    SENT: { label: "Sent", color: "bg-purple-100 text-purple-700" },
+    SENT: { label: "In Outreach", color: "bg-purple-100 text-purple-700" },
     REPLIED: { label: "Replied", color: "bg-emerald-100 text-emerald-700" },
     CLOSED: { label: "Closed", color: "bg-slate-100 text-slate-700" },
   };

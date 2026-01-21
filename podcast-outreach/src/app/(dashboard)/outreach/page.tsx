@@ -930,6 +930,14 @@ function PipelineCard({
         </p>
       )}
 
+      {/* Show email if available */}
+      {podcast.primaryEmail && (
+        <p className="text-xs text-[#006073] mb-2 flex items-center gap-1 truncate">
+          <Mail className="h-3 w-3 flex-shrink-0" />
+          <span className="truncate">{podcast.primaryEmail}</span>
+        </p>
+      )}
+
       <div className="flex items-center gap-2 text-xs text-[#006073]">
         <Mail className="h-3 w-3" />
         <span>{sentCount} email{sentCount !== 1 ? "s" : ""} sent</span>
@@ -972,6 +980,9 @@ function OutreachTableRow({
           <p className="font-medium text-[#02121a]">{podcast.showName}</p>
           {podcast.hostName && (
             <p className="text-sm text-[#006073]">{podcast.hostName}</p>
+          )}
+          {podcast.primaryEmail && (
+            <p className="text-xs text-[#0a9396] truncate">{podcast.primaryEmail}</p>
           )}
         </div>
       </td>

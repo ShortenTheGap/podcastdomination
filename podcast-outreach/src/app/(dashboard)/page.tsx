@@ -16,42 +16,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// Status groups for Kanban view
-const STATUS_GROUPS = [
-  {
-    id: "new",
-    label: "New",
-    statuses: ["NOT_CONTACTED"],
-    color: "bg-[#ead7a5]",
-  },
-  {
-    id: "ready",
-    label: "Sent - Awaiting Response",
-    statuses: ["READY", "READY_TO_DRAFT", "DRAFTED", "QA_APPROVED"],
-    color: "bg-[#0a9396]",
-  },
-  {
-    id: "sent",
-    label: "Sent",
-    statuses: ["SENT", "FOLLOW_UP_DUE", "FOLLOW_UP_SENT"],
-    color: "bg-[#006073]",
-  },
-  {
-    id: "replied",
-    label: "Replied",
-    statuses: ["REPLIED"],
-    color: "bg-[#94d2bd]",
-  },
-  {
-    id: "skipped",
-    label: "Skipped",
-    statuses: ["SKIPPED", "CLOSED"],
-    color: "bg-[#9d2227]",
-  },
-];
-
 export default function PipelinePage() {
-  const [viewMode, setViewMode] = useState<"table" | "kanban">("table");
   const [statusFilter, setStatusFilter] = useState("");
 
   const { data, isLoading } = useQuery({
@@ -78,32 +43,6 @@ export default function PipelinePage() {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* View Toggle */}
-          <div className="flex border border-[#94d2bd] rounded-lg overflow-hidden">
-            <button
-              onClick={() => setViewMode("table")}
-              className={cn(
-                "px-3 py-1.5 text-sm",
-                viewMode === "table"
-                  ? "bg-[#006073] text-white"
-                  : "bg-white text-[#006073] hover:bg-[#ead7a5]"
-              )}
-            >
-              List
-            </button>
-            <button
-              onClick={() => setViewMode("kanban")}
-              className={cn(
-                "px-3 py-1.5 text-sm",
-                viewMode === "kanban"
-                  ? "bg-[#006073] text-white"
-                  : "bg-white text-[#006073] hover:bg-[#ead7a5]"
-              )}
-            >
-              Board
-            </button>
-          </div>
-
           {/* Filter */}
           <FilterDropdown value={statusFilter} onChange={setStatusFilter} />
         </div>
@@ -115,10 +54,8 @@ export default function PipelinePage() {
           <div className="flex items-center justify-center h-64">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#0a9396]" />
           </div>
-        ) : viewMode === "table" ? (
-          <PipelineTable podcasts={data?.podcasts || []} />
         ) : (
-          <PipelineBoard podcasts={data?.podcasts || []} />
+          <PipelineTable podcasts={data?.podcasts || []} />
         )}
       </div>
     </div>
@@ -401,52 +338,3 @@ function FilterDropdown({
   );
 }
 
-function PipelineBoard({ podcasts }: { podcasts: any[] }) {
-  const router = useRouter();
-
-  return (
-    <div className="flex gap-4 p-4 overflow-x-auto h-full">
-      {STATUS_GROUPS.map((group) => {
-        const groupPodcasts = podcasts.filter((p) =>
-          group.statuses.includes(p.status)
-        );
-
-        return (
-          <div
-            key={group.id}
-            className="flex-shrink-0 w-72 bg-[#ead7a5] rounded-lg flex flex-col"
-          >
-            <div className="p-3 border-b border-[#94d2bd] flex items-center gap-2">
-              <div className={cn("w-2 h-2 rounded-full", group.color)} />
-              <span className="font-medium text-[#02121a]">{group.label}</span>
-              <span className="text-[#006073] text-sm ml-auto">
-                {groupPodcasts.length}
-              </span>
-            </div>
-            <div className="p-2 space-y-2 overflow-y-auto flex-1">
-              {groupPodcasts.map((podcast) => (
-                <div
-                  key={podcast.id}
-                  onClick={() => router.push(`/podcast/${podcast.id}`)}
-                  className="bg-white p-3 rounded-lg border border-[#94d2bd] shadow-sm hover:shadow-md transition-shadow cursor-pointer"
-                >
-                  <p className="font-medium text-[#02121a] truncate">
-                    {podcast.showName}
-                  </p>
-                  <p className="text-sm text-[#006073] truncate">
-                    {podcast.hostName || "Unknown host"}
-                  </p>
-                </div>
-              ))}
-              {groupPodcasts.length === 0 && (
-                <div className="text-center py-8 text-[#0a9396] text-sm">
-                  No podcasts
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
