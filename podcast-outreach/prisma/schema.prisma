@@ -315,3 +315,15 @@ enum SeedCategory {
   ENTREPRENEUR_CEO
   DAD_PARENTING
 }
+
+// ============================================
+// KEY-VALUE STORE FOR CAMPAIGN DATA
+// ============================================
+
+// Stores JSON data persistently (for campaigns, settings, etc.)
+// This replaces file-based storage which doesn't work on Railway
+model KeyValueStore {
+  key       String    @id
+  value     String    @db.Text  // JSON stored as text
+  updatedAt DateTime  @updatedAt
+}

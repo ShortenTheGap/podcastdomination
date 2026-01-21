@@ -26,6 +26,12 @@ class MockPrismaClient {
   leadMagnet = { findMany: async () => [] };
   joeyProfile = { findFirst: async () => null };
   systemConfig = { findFirst: async () => null };
+  keyValueStore = {
+    findUnique: async () => null,
+    upsert: async () => null,
+    create: async () => null,
+    update: async () => null,
+  };
 }
 
 function createPrismaClient(): any {

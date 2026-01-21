@@ -1,8 +1,8 @@
-// File-based persistent storage for campaigns
-// This ensures data survives server restarts
+// Database-based persistent storage for campaigns
+// This ensures data survives Railway deployments and container restarts
+// Uses a key-value store pattern with JSON serialization
 
-import { promises as fs } from "fs";
-import path from "path";
+import { db } from "./db";
 
 interface EmailInSequence {
   id: string;
@@ -31,15 +31,14 @@ export interface StoredCampaign {
   updatedAt?: string;
 }
 
-// Storage file path - in the project's data directory
-const DATA_DIR = path.join(process.cwd(), "data");
-const CAMPAIGNS_FILE = path.join(DATA_DIR, "campaigns.json");
+// Storage key for campaigns data
+const CAMPAIGNS_KEY = "outreach-campaigns";
 
 // In-memory cache for performance
 let campaignsCache: StoredCampaign[] | null = null;
 let cacheLoaded = false;
 
-// Simple write lock to prevent concurrent file writes
+// Simple write lock to prevent concurrent database writes
 let writeLock: Promise<void> = Promise.resolve();
 
 async function withWriteLock<T>(fn: () => Promise<T>): Promise<T> {
@@ -57,48 +56,105 @@ async function withWriteLock<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-// Ensure data directory exists
-async function ensureDataDir(): Promise<void> {
+// Try to create the KeyValueStore table if it doesn't exist
+async function ensureTableExists(): Promise<boolean> {
   try {
-    await fs.mkdir(DATA_DIR, { recursive: true });
-  } catch {
-    // Directory may already exist
-  }
-}
-
-// Load campaigns from file
-async function loadFromFile(): Promise<StoredCampaign[]> {
-  try {
-    await ensureDataDir();
-    const data = await fs.readFile(CAMPAIGNS_FILE, "utf-8");
-    const parsed = JSON.parse(data);
-    if (Array.isArray(parsed)) {
-      return parsed;
+    // Try a simple query first
+    await db.keyValueStore.findUnique({ where: { key: "__test__" } });
+    return true;
+  } catch (error) {
+    // Table doesn't exist, try to create it with raw SQL
+    console.log("[Storage] KeyValueStore table not found, attempting to create...");
+    try {
+      await db.$executeRaw`
+        CREATE TABLE IF NOT EXISTS "KeyValueStore" (
+          "key" TEXT NOT NULL,
+          "value" TEXT NOT NULL,
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "KeyValueStore_pkey" PRIMARY KEY ("key")
+        )
+      `;
+      console.log("[Storage] KeyValueStore table created successfully");
+      return true;
+    } catch (createError) {
+      console.error("[Storage] Failed to create KeyValueStore table:", createError instanceof Error ? createError.message : createError);
+      return false;
     }
+  }
+}
+
+// Track if table exists
+let tableExists: boolean | null = null;
+
+// Load campaigns from database
+async function loadFromDatabase(): Promise<StoredCampaign[]> {
+  try {
+    // Ensure table exists (only check once)
+    if (tableExists === null) {
+      tableExists = await ensureTableExists();
+    }
+
+    if (!tableExists) {
+      console.warn("[Storage] Database table not available, returning empty array");
+      return [];
+    }
+
+    // Try to read from KeyValueStore
+    const record = await db.keyValueStore.findUnique({
+      where: { key: CAMPAIGNS_KEY },
+    });
+
+    if (record?.value) {
+      const parsed = JSON.parse(record.value);
+      if (Array.isArray(parsed)) {
+        console.log(`[Storage] Loaded ${parsed.length} campaigns from database`);
+        return parsed;
+      }
+    }
+    console.log("[Storage] No campaigns in database, returning empty array");
     return [];
   } catch (error) {
-    // File doesn't exist or is invalid - return empty array
-    console.log("[Storage] No existing campaigns file, starting fresh");
+    // Database error - return empty
+    console.warn("[Storage] Database read failed:", error instanceof Error ? error.message : error);
     return [];
   }
 }
 
-// Save campaigns to file
-async function saveToFile(campaigns: StoredCampaign[]): Promise<void> {
+// Save campaigns to database
+async function saveToDatabase(campaigns: StoredCampaign[]): Promise<void> {
   try {
-    await ensureDataDir();
-    await fs.writeFile(CAMPAIGNS_FILE, JSON.stringify(campaigns, null, 2), "utf-8");
-    console.log(`[Storage] Saved ${campaigns.length} campaigns to file`);
+    // Ensure table exists (only check once)
+    if (tableExists === null) {
+      tableExists = await ensureTableExists();
+    }
+
+    if (!tableExists) {
+      console.warn("[Storage] Database table not available, skipping save");
+      return;
+    }
+
+    const value = JSON.stringify(campaigns);
+
+    // Upsert - create or update
+    await db.keyValueStore.upsert({
+      where: { key: CAMPAIGNS_KEY },
+      update: { value },
+      create: { key: CAMPAIGNS_KEY, value },
+    });
+
+    console.log(`[Storage] Saved ${campaigns.length} campaigns to database`);
   } catch (error) {
-    console.error("[Storage] Failed to save campaigns:", error);
+    // If database fails, log but don't crash
+    // The localStorage fallback on frontend will keep data safe
+    console.error("[Storage] Database write failed:", error instanceof Error ? error.message : error);
     throw error;
   }
 }
 
-// Get all campaigns (with file persistence)
+// Get all campaigns (with database persistence)
 export async function getCampaigns(): Promise<StoredCampaign[]> {
   if (!cacheLoaded) {
-    campaignsCache = await loadFromFile();
+    campaignsCache = await loadFromDatabase();
     cacheLoaded = true;
   }
   return campaignsCache || [];
@@ -125,7 +181,7 @@ export async function updateCampaign(
         ...updates,
         updatedAt: new Date().toISOString(),
       };
-      await saveToFile(campaignsCache!);
+      await saveToDatabase(campaignsCache!);
       console.log(`[Storage] Updated campaign ${id}:`, Object.keys(updates));
       return true;
     }
@@ -156,7 +212,7 @@ export async function addCampaign(campaign: StoredCampaign): Promise<void> {
       });
     }
 
-    await saveToFile(campaignsCache!);
+    await saveToDatabase(campaignsCache!);
     console.log(`[Storage] Added/updated campaign ${campaign.id}`);
   });
 }
@@ -169,7 +225,7 @@ export async function syncCampaigns(campaigns: StoredCampaign[]): Promise<void> 
       updatedAt: new Date().toISOString(),
     }));
     cacheLoaded = true;
-    await saveToFile(campaignsCache);
+    await saveToDatabase(campaignsCache);
     console.log(`[Storage] Synced ${campaigns.length} campaigns`);
   });
 }
@@ -182,7 +238,7 @@ export async function deleteCampaign(id: string): Promise<boolean> {
 
     if (index !== -1) {
       campaignsCache!.splice(index, 1);
-      await saveToFile(campaignsCache!);
+      await saveToDatabase(campaignsCache!);
       console.log(`[Storage] Deleted campaign ${id}`);
       return true;
     }
@@ -202,7 +258,7 @@ export async function initializeWithDefaults(defaults: StoredCampaign[]): Promis
   return withWriteLock(async () => {
     // Re-check inside lock to prevent race condition
     if (!cacheLoaded) {
-      campaignsCache = await loadFromFile();
+      campaignsCache = await loadFromDatabase();
       cacheLoaded = true;
     }
     if (campaignsCache!.length === 0) {
@@ -210,7 +266,7 @@ export async function initializeWithDefaults(defaults: StoredCampaign[]): Promis
         ...c,
         updatedAt: new Date().toISOString(),
       }));
-      await saveToFile(campaignsCache);
+      await saveToDatabase(campaignsCache);
       console.log(`[Storage] Initialized with ${defaults.length} default campaigns`);
     }
   });
