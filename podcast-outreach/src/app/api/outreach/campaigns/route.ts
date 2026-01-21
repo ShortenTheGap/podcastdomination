@@ -50,9 +50,8 @@ function mapStatusToStage(status: string, replyType: string | null, outcome: str
     case "DRAFTED":
       return "drafting";
     case "QA_APPROVED":
-      return "ready_to_send";
     case "SENT":
-      return "sent_awaiting";
+      return "ready_to_send";
     case "FOLLOW_UP_DUE":
     case "FOLLOW_UP_SENT":
       return "follow_up_due";

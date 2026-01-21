@@ -45,7 +45,7 @@ function createInitialData(): DemoCampaign[] {
       hostName: "Dr. Sarah Johnson",
       primaryEmail: "sarah@healthpodcast.com",
       tier: "TIER_1",
-      status: "sent_awaiting",
+      status: "ready_to_send",
       responseType: null,
       emailSequence: [
         {

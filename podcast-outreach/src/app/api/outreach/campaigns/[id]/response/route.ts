@@ -50,9 +50,7 @@ function mapStageToDbStatus(stage: string) {
     case "drafting":
       return { status: "RESEARCHING" as const };
     case "ready_to_send":
-      return { status: "DRAFTED" as const };
-    case "sent_awaiting":
-      return { status: "CONTACTED" as const };
+      return { status: "SENT" as const };
     case "follow_up_due":
       return { status: "FOLLOW_UP_DUE" as const };
     case "responded":

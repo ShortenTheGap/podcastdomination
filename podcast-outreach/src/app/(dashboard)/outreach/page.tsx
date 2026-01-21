@@ -103,7 +103,6 @@ type OutreachStage =
   | "not_started"
   | "drafting"
   | "ready_to_send"
-  | "sent_awaiting"
   | "follow_up_due"
   | "responded"
   | "booked"
@@ -116,7 +115,6 @@ const PIPELINE_STAGES: { id: OutreachStage; label: string; color: string; icon: 
   { id: "not_started", label: "Not Started", color: "bg-[#ead7a5]", icon: <Clock className="h-4 w-4" /> },
   { id: "drafting", label: "Drafting", color: "bg-[#0a9396]/20", icon: <Edit className="h-4 w-4" /> },
   { id: "ready_to_send", label: "Sent - Awaiting Response", color: "bg-[#ed9b05]/30", icon: <Mail className="h-4 w-4" /> },
-  { id: "sent_awaiting", label: "Awaiting Response", color: "bg-[#006073]/20", icon: <Send className="h-4 w-4" /> },
   { id: "follow_up_due", label: "Follow-up Due", color: "bg-[#cb6701]/30", icon: <RefreshCw className="h-4 w-4" /> },
   { id: "responded", label: "Responded", color: "bg-[#94d2bd]/50", icon: <MessageSquare className="h-4 w-4" /> },
   { id: "booked", label: "Booked", color: "bg-[#94d2bd]", icon: <CheckCircle className="h-4 w-4" /> },
@@ -179,6 +177,9 @@ export default function OutreachPage() {
 
   const queryClient = useQueryClient();
 
+  // Track if we have local changes that haven't been synced yet
+  const hasUnsyncedChangesRef = useRef(false);
+
   // Fetch outreach data from server (source of truth)
   const { data: outreachData, isLoading, refetch } = useQuery({
     queryKey: ["outreach-campaigns"],
@@ -187,15 +188,23 @@ export default function OutreachPage() {
       if (!res.ok) throw new Error("Failed to fetch");
       return res.json();
     },
-    staleTime: 0, // Always fetch fresh data
-    refetchOnWindowFocus: true,
-    refetchOnReconnect: true,
+    staleTime: 30000, // Keep data fresh for 30 seconds to reduce refetch frequency
+    refetchOnWindowFocus: false, // DISABLED: Prevents overwriting local changes on window focus
+    refetchOnReconnect: false, // DISABLED: Prevents overwriting on reconnect
   });
 
   // Initialize campaigns from server data OR localStorage backup
   // CRITICAL: Compare timestamps to use the most recent data
+  // CRITICAL: Never overwrite local changes that haven't been synced
   useEffect(() => {
     if (!outreachData?.campaigns) return;
+
+    // IMPORTANT: Never overwrite local state if we have unsynced changes
+    // This prevents the race condition where server refetch overwrites local edits
+    if (hasUnsyncedChanges || hasUnsyncedChangesRef.current) {
+      console.log("[Sync] Skipping server data - local changes pending sync");
+      return;
+    }
 
     const serverCampaigns = outreachData.campaigns;
     const localBackup = loadFromLocalStorage();
@@ -236,6 +245,7 @@ export default function OutreachPage() {
               console.log("[Recovery] Successfully synced local changes to server");
               setLastSyncTime(new Date());
               setHasUnsyncedChanges(false);
+              hasUnsyncedChangesRef.current = false;
             }
           });
           return;
@@ -243,14 +253,14 @@ export default function OutreachPage() {
       }
     }
 
-    // Default: use server data
+    // Default: use server data (only when no local changes pending)
     setLocalCampaigns(serverCampaigns);
     setLastSyncTime(new Date());
     // Update localStorage backup with server data
     if (serverCampaigns.length > 0) {
       saveToLocalStorage(serverCampaigns);
     }
-  }, [outreachData]);
+  }, [outreachData, hasUnsyncedChanges]);
 
   // Auto-sync function with debouncing
   // Uses a ref to always sync the latest campaigns, avoiding stale closure issues
@@ -266,8 +276,9 @@ export default function OutreachPage() {
       clearTimeout(syncTimerRef.current);
     }
 
-    // Set flag for unsaved changes
+    // Set flag for unsaved changes (both state and ref for immediate access)
     setHasUnsyncedChanges(true);
+    hasUnsyncedChangesRef.current = true;
     setSyncError(null);
 
     // Schedule sync after 500ms of inactivity (reduced from 1000ms for faster feedback)
@@ -282,6 +293,7 @@ export default function OutreachPage() {
 
       if (success) {
         setHasUnsyncedChanges(false);
+        hasUnsyncedChangesRef.current = false;
         setLastSyncTime(new Date());
         pendingCampaignsRef.current = null;
       } else {
@@ -369,11 +381,13 @@ export default function OutreachPage() {
       // This ensures drag operations are saved even if user navigates away quickly
       setIsSyncing(true);
       setHasUnsyncedChanges(true);
+      hasUnsyncedChangesRef.current = true;
 
       syncCampaignsToServer(updated).then(success => {
         setIsSyncing(false);
         if (success) {
           setHasUnsyncedChanges(false);
+          hasUnsyncedChangesRef.current = false;
           setLastSyncTime(new Date());
           pendingCampaignsRef.current = null;
           console.log("[Sync] Stage change saved successfully");
@@ -396,6 +410,7 @@ export default function OutreachPage() {
     setIsSyncing(false);
     if (success) {
       setHasUnsyncedChanges(false);
+      hasUnsyncedChangesRef.current = false;
       setLastSyncTime(new Date());
       pendingCampaignsRef.current = null;
     } else {
@@ -443,7 +458,7 @@ export default function OutreachPage() {
   // Stats
   const stats = {
     total: podcasts.length,
-    awaiting: podcasts.filter((p) => p.status === "sent_awaiting").length,
+    awaiting: podcasts.filter((p) => p.status === "ready_to_send").length,
     followUpDue: podcasts.filter((p) => p.status === "follow_up_due").length,
     responded: podcasts.filter((p) => p.status === "responded").length,
     booked: podcasts.filter((p) => p.status === "booked").length,
@@ -595,8 +610,10 @@ export default function OutreachPage() {
           podcast={selectedPodcast}
           onClose={() => setSelectedPodcast(null)}
           onUpdate={() => {
-            queryClient.invalidateQueries({ queryKey: ["outreach-campaigns"] });
-            refetch();
+            // NOTE: We no longer invalidate/refetch here as it can cause race conditions
+            // that overwrite local changes. The local state is the source of truth
+            // and will be synced to the server automatically.
+            console.log("[Update] Campaign updated locally, will sync to server");
           }}
           onUpdateCampaign={(id, updates) => {
             // Update local campaigns and sync to server

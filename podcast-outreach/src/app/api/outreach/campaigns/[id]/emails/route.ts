@@ -171,7 +171,7 @@ export async function POST(
 
         // Update campaign status if email was sent
         if (status === "sent") {
-          updates.status = "sent_awaiting";
+          updates.status = "ready_to_send";
           updates.lastContactedAt = new Date().toISOString();
         }
 
