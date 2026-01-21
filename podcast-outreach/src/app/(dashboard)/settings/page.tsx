@@ -801,13 +801,23 @@ function IntegrationsTab() {
   const testConnection = async (integration: string) => {
     setTestingIntegration(integration);
     try {
-      const res = await fetch("/api/integrations/test", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ integration, apiKey: apiKeys[integration] }),
-      });
-      const result = await res.json();
-      setTestResults((prev) => ({ ...prev, [integration]: result }));
+      // Gmail uses a special endpoint that sends an actual test email
+      if (integration === "gmail") {
+        const res = await fetch("/api/integrations/test-email", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+        const result = await res.json();
+        setTestResults((prev) => ({ ...prev, [integration]: result }));
+      } else {
+        const res = await fetch("/api/integrations/test", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ integration, apiKey: apiKeys[integration] }),
+        });
+        const result = await res.json();
+        setTestResults((prev) => ({ ...prev, [integration]: result }));
+      }
     } catch (error) {
       setTestResults((prev) => ({
         ...prev,
@@ -1084,7 +1094,7 @@ function IntegrationsTab() {
                     {testingIntegration === "gmail" ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
-                      "Test"
+                      "Send Test"
                     )}
                   </button>
                   <button
