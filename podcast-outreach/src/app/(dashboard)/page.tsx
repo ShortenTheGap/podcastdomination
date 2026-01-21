@@ -26,7 +26,7 @@ const STATUS_GROUPS = [
   },
   {
     id: "ready",
-    label: "Ready to Send",
+    label: "Sent - Awaiting Response",
     statuses: ["READY", "READY_TO_DRAFT", "DRAFTED", "QA_APPROVED"],
     color: "bg-[#0a9396]",
   },

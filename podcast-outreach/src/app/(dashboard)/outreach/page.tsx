@@ -21,6 +21,7 @@ import {
   Sparkles,
   Wand2,
   Save,
+  Play,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -1049,6 +1050,7 @@ function EmailSequenceTimeline({
 }) {
   const [sendingEmailId, setSendingEmailId] = useState<string | null>(null);
   const [isGeneratingSequence, setIsGeneratingSequence] = useState(false);
+  const [isStartingCampaign, setIsStartingCampaign] = useState(false);
   const sequence = podcast.emailSequence || [];
 
   // Define the sequence template based on response type
@@ -1210,6 +1212,108 @@ function EmailSequenceTimeline({
     setSendingEmailId(null);
   };
 
+  // Check if campaign can be started (all emails generated and initial not sent)
+  const initialEmail = sequence.find(e => e.type === "initial");
+  const campaignNotStarted = initialEmail && initialEmail.status === "draft";
+  const canStartCampaign = allEmailsGenerated && campaignNotStarted;
+
+  const handleStartCampaign = async () => {
+    if (!initialEmail) return;
+
+    setIsStartingCampaign(true);
+    try {
+      // Load email settings from localStorage for follow-up timing
+      let emailSettings = {
+        followUp1Days: 5,
+        followUp2Days: 7,
+        followUp3Days: 14,
+      };
+
+      if (typeof window !== "undefined") {
+        const storedEmailSettings = localStorage.getItem("email-settings");
+        if (storedEmailSettings) {
+          try {
+            const parsed = JSON.parse(storedEmailSettings);
+            emailSettings = {
+              followUp1Days: parsed.followUp1Days || 5,
+              followUp2Days: parsed.followUp2Days || 7,
+              followUp3Days: parsed.followUp3Days || 14,
+            };
+          } catch {}
+        }
+      }
+
+      // Send the initial outreach email
+      const res = await fetch(`/api/outreach/campaigns/${podcast.id}/emails`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: initialEmail.id,
+          type: initialEmail.type,
+          subject: initialEmail.subject,
+          body: initialEmail.body,
+          status: "sent",
+          action: "send",
+        }),
+      });
+
+      if (res.ok) {
+        const now = new Date();
+
+        // Calculate scheduled dates for follow-up emails
+        const followUp1Date = new Date(now);
+        followUp1Date.setDate(followUp1Date.getDate() + emailSettings.followUp1Days);
+
+        const followUp2Date = new Date(followUp1Date);
+        followUp2Date.setDate(followUp2Date.getDate() + emailSettings.followUp2Days);
+
+        const followUp3Date = new Date(followUp2Date);
+        followUp3Date.setDate(followUp3Date.getDate() + emailSettings.followUp3Days);
+
+        // Update all emails in the sequence
+        const newSequence = sequence.map(email => {
+          if (email.type === "initial") {
+            return {
+              ...email,
+              status: "sent" as const,
+              sentAt: now.toISOString(),
+            };
+          } else if (email.type === "follow_up_1") {
+            return {
+              ...email,
+              status: "scheduled" as const,
+              scheduledFor: followUp1Date.toISOString(),
+            };
+          } else if (email.type === "follow_up_2") {
+            return {
+              ...email,
+              status: "scheduled" as const,
+              scheduledFor: followUp2Date.toISOString(),
+            };
+          } else if (email.type === "follow_up_3") {
+            return {
+              ...email,
+              status: "scheduled" as const,
+              scheduledFor: followUp3Date.toISOString(),
+            };
+          }
+          return email;
+        });
+
+        // Update campaign: mark as sent_awaiting and set next follow-up date
+        onUpdateCampaign(podcast.id, {
+          emailSequence: newSequence,
+          lastContactedAt: now.toISOString(),
+          nextFollowUpAt: followUp1Date.toISOString(),
+          status: "sent_awaiting" as OutreachStage,
+        });
+      }
+    } catch (error) {
+      console.error("Failed to start campaign:", error);
+    }
+    setIsStartingCampaign(false);
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between mb-4">
@@ -1313,32 +1417,16 @@ function EmailSequenceTimeline({
                       )}
                     </div>
 
-                    <div className="flex gap-2 mt-3">
-                      <button
-                        onClick={() => onViewEmail(email)}
-                        className="text-xs text-blue-600 hover:text-blue-700"
-                      >
-                        View Full
-                      </button>
-                      {email.status === "draft" && (
-                        <>
-                          <button
-                            onClick={() => onEditEmail(email)}
-                            className="text-xs text-blue-600 hover:text-blue-700"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => handleSendNow(email)}
-                            disabled={isSending}
-                            className="text-xs text-green-600 hover:text-green-700 disabled:opacity-50 flex items-center gap-1"
-                          >
-                            {isSending && <Loader2 className="h-3 w-3 animate-spin" />}
-                            Send Now
-                          </button>
-                        </>
-                      )}
-                    </div>
+                    {email.status === "draft" && (
+                      <div className="flex gap-2 mt-3">
+                        <button
+                          onClick={() => onEditEmail(email)}
+                          className="text-xs text-blue-600 hover:text-blue-700"
+                        >
+                          Edit
+                        </button>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <div className="text-center py-4">
@@ -1351,6 +1439,32 @@ function EmailSequenceTimeline({
           );
         })}
       </div>
+
+      {/* Start Campaign Button - shows when all 4 emails are generated */}
+      {canStartCampaign && (
+        <div className="mt-6 pt-4 border-t border-slate-200">
+          <button
+            onClick={handleStartCampaign}
+            disabled={isStartingCampaign}
+            className="w-full px-4 py-3 bg-gradient-to-r from-green-600 to-teal-600 text-white font-medium rounded-lg hover:from-green-700 hover:to-teal-700 disabled:opacity-50 flex items-center justify-center gap-2 shadow-md"
+          >
+            {isStartingCampaign ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Starting Campaign...
+              </>
+            ) : (
+              <>
+                <Play className="h-5 w-5" />
+                Start Campaign
+              </>
+            )}
+          </button>
+          <p className="text-xs text-slate-500 text-center mt-2">
+            This will send the initial email and schedule follow-ups automatically
+          </p>
+        </div>
+      )}
     </div>
   );
 }
