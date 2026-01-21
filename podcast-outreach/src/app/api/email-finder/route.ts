@@ -51,18 +51,27 @@ export async function POST(request: NextRequest) {
 
     // Method 2: Try Hunter.io API if configured
     const hunterApiKey = process.env.HUNTER_API_KEY;
+    console.log("[Email Finder] Hunter API key configured:", !!hunterApiKey);
+    console.log("[Email Finder] Website URL:", websiteUrl);
+    console.log("[Email Finder] Host name:", hostName);
+
     if (hunterApiKey && websiteUrl) {
       try {
         // Extract domain from website URL
         const domain = new URL(websiteUrl).hostname.replace("www.", "");
+        console.log("[Email Finder] Extracted domain:", domain);
 
         // Use Hunter.io domain search
-        const hunterRes = await fetch(
-          `https://api.hunter.io/v2/domain-search?domain=${domain}&api_key=${hunterApiKey}&limit=5`
-        );
+        const hunterUrl = `https://api.hunter.io/v2/domain-search?domain=${domain}&api_key=${hunterApiKey}&limit=5`;
+        console.log("[Email Finder] Calling Hunter.io domain-search...");
+        const hunterRes = await fetch(hunterUrl);
+
+        console.log("[Email Finder] Hunter.io response status:", hunterRes.status);
 
         if (hunterRes.ok) {
           const hunterData = await hunterRes.json();
+          console.log("[Email Finder] Hunter.io emails found:", hunterData.data?.emails?.length || 0);
+
           if (hunterData.data?.emails?.length > 0) {
             // Find the most relevant email (prefer based on host name if provided)
             const emails = hunterData.data.emails;
@@ -86,9 +95,43 @@ export async function POST(request: NextRequest) {
               source = "hunter.io";
             }
           }
+        } else {
+          const errorData = await hunterRes.json().catch(() => ({}));
+          console.error("[Email Finder] Hunter.io error response:", errorData);
         }
       } catch (hunterError) {
-        console.error("Hunter.io API error:", hunterError);
+        console.error("[Email Finder] Hunter.io API error:", hunterError);
+      }
+    }
+
+    // Method 2b: Try Hunter.io email-finder endpoint if we have host name and domain but no result yet
+    if (!foundEmail && hunterApiKey && hostName && websiteUrl) {
+      try {
+        const domain = new URL(websiteUrl).hostname.replace("www.", "");
+        const nameParts = hostName.trim().split(" ");
+
+        if (nameParts.length >= 2) {
+          const firstName = nameParts[0];
+          const lastName = nameParts[nameParts.length - 1];
+
+          console.log("[Email Finder] Trying Hunter.io email-finder endpoint...");
+          const finderUrl = `https://api.hunter.io/v2/email-finder?domain=${domain}&first_name=${encodeURIComponent(firstName)}&last_name=${encodeURIComponent(lastName)}&api_key=${hunterApiKey}`;
+          const finderRes = await fetch(finderUrl);
+
+          console.log("[Email Finder] email-finder response status:", finderRes.status);
+
+          if (finderRes.ok) {
+            const finderData = await finderRes.json();
+            console.log("[Email Finder] email-finder result:", finderData.data?.email);
+
+            if (finderData.data?.email) {
+              foundEmail = finderData.data.email;
+              source = "hunter.io";
+            }
+          }
+        }
+      } catch (finderError) {
+        console.error("[Email Finder] Hunter.io email-finder error:", finderError);
       }
     }
 
@@ -136,12 +179,20 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // No email found
+    // No email found - provide helpful reason
+    let notFoundMessage = "Could not find email automatically. Please enter manually.";
+
+    if (!websiteUrl) {
+      notFoundMessage = "No website URL available for this podcast. Please enter email manually.";
+    } else if (!hunterApiKey) {
+      notFoundMessage = "Email finder service not configured. Please enter email manually.";
+    }
+
     return NextResponse.json({
       success: false,
       email: null,
       source: "not_found",
-      message: "Could not find email automatically. Please enter manually.",
+      message: notFoundMessage,
     });
   } catch (error) {
     console.error("Error finding email:", error);

@@ -146,7 +146,7 @@ export default function PodcastDetailPage({ params }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           podcastId: id,
-          hostName: podcast.hostName,
+          hostName: contactForm.hostName || podcast.hostName,
           showName: podcast.showName,
           websiteUrl: podcast.websiteUrl,
         }),
@@ -318,14 +318,14 @@ export default function PodcastDetailPage({ params }: Props) {
                   value={contactForm.hostName}
                   onChange={(e) => setContactForm({ ...contactForm, hostName: e.target.value })}
                   placeholder="Host name"
-                  className="border border-slate-300 rounded px-3 py-2 text-sm"
+                  className="border border-slate-300 rounded px-3 py-2 text-sm text-slate-900"
                 />
                 <input
                   type="email"
                   value={contactForm.primaryEmail}
                   onChange={(e) => setContactForm({ ...contactForm, primaryEmail: e.target.value })}
                   placeholder="Email address"
-                  className="border border-slate-300 rounded px-3 py-2 text-sm"
+                  className="border border-slate-300 rounded px-3 py-2 text-sm text-slate-900"
                 />
               </div>
               {/* Find Email Button */}
