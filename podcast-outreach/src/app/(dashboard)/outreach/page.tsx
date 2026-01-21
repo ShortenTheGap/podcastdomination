@@ -27,28 +27,42 @@ import { cn } from "@/lib/utils";
 // LocalStorage key for backup persistence
 const CAMPAIGNS_STORAGE_KEY = "outreach-campaigns-backup";
 
+interface LocalStorageBackup {
+  campaigns: OutreachPodcast[];
+  savedAt: string;
+  // Hash of campaign statuses to detect changes
+  statusHash: string;
+}
+
+// Create a hash of campaign statuses to detect changes
+function createStatusHash(campaigns: OutreachPodcast[]): string {
+  return campaigns.map(c => `${c.id}:${c.status}`).sort().join('|');
+}
+
 // Save campaigns to localStorage as backup
 function saveToLocalStorage(campaigns: OutreachPodcast[]): void {
   try {
-    localStorage.setItem(CAMPAIGNS_STORAGE_KEY, JSON.stringify({
+    const backup: LocalStorageBackup = {
       campaigns,
       savedAt: new Date().toISOString(),
-    }));
-    console.log("[LocalStorage] Backed up", campaigns.length, "campaigns");
+      statusHash: createStatusHash(campaigns),
+    };
+    localStorage.setItem(CAMPAIGNS_STORAGE_KEY, JSON.stringify(backup));
+    console.log("[LocalStorage] Backed up", campaigns.length, "campaigns at", backup.savedAt);
   } catch (e) {
     console.warn("[LocalStorage] Failed to save backup:", e);
   }
 }
 
-// Load campaigns from localStorage backup
-function loadFromLocalStorage(): OutreachPodcast[] | null {
+// Load campaigns from localStorage backup with timestamp
+function loadFromLocalStorage(): LocalStorageBackup | null {
   try {
     const stored = localStorage.getItem(CAMPAIGNS_STORAGE_KEY);
     if (stored) {
-      const data = JSON.parse(stored);
+      const data = JSON.parse(stored) as LocalStorageBackup;
       if (data.campaigns && Array.isArray(data.campaigns) && data.campaigns.length > 0) {
-        console.log("[LocalStorage] Restored", data.campaigns.length, "campaigns from backup (saved at", data.savedAt, ")");
-        return data.campaigns;
+        console.log("[LocalStorage] Found backup with", data.campaigns.length, "campaigns (saved at", data.savedAt, ")");
+        return data;
       }
     }
   } catch (e) {
@@ -178,26 +192,62 @@ export default function OutreachPage() {
   });
 
   // Initialize campaigns from server data OR localStorage backup
+  // CRITICAL: Compare timestamps to use the most recent data
   useEffect(() => {
-    if (outreachData?.campaigns && outreachData.campaigns.length > 0) {
-      // Server has data - use it and backup to localStorage
-      setLocalCampaigns(outreachData.campaigns);
-      setLastSyncTime(new Date());
-      saveToLocalStorage(outreachData.campaigns);
-    } else if (outreachData?.campaigns && outreachData.campaigns.length === 0) {
-      // Server returned empty - check localStorage backup
-      const backupCampaigns = loadFromLocalStorage();
-      if (backupCampaigns && backupCampaigns.length > 0) {
-        console.log("[Recovery] Server empty, restoring from localStorage backup");
-        setLocalCampaigns(backupCampaigns);
-        // Sync backup to server to restore data
-        syncCampaignsToServer(backupCampaigns).then(success => {
-          if (success) {
-            console.log("[Recovery] Successfully restored campaigns to server");
-            setLastSyncTime(new Date());
-          }
-        });
+    if (!outreachData?.campaigns) return;
+
+    const serverCampaigns = outreachData.campaigns;
+    const localBackup = loadFromLocalStorage();
+
+    // If server is empty but we have local backup, restore it
+    if (serverCampaigns.length === 0 && localBackup) {
+      console.log("[Recovery] Server empty, restoring from localStorage backup");
+      setLocalCampaigns(localBackup.campaigns);
+      // Sync backup to server to restore data
+      syncCampaignsToServer(localBackup.campaigns).then(success => {
+        if (success) {
+          console.log("[Recovery] Successfully restored campaigns to server");
+          setLastSyncTime(new Date());
+        }
+      });
+      return;
+    }
+
+    // If we have both server data and local backup, compare them
+    if (serverCampaigns.length > 0 && localBackup) {
+      const serverHash = createStatusHash(serverCampaigns);
+      const localHash = localBackup.statusHash;
+
+      // If hashes differ, local has unsaved changes - use local
+      if (serverHash !== localHash) {
+        const localTime = new Date(localBackup.savedAt).getTime();
+        const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
+
+        // Only use local if it was saved within the last 5 minutes (recent changes)
+        if (localTime > fiveMinutesAgo) {
+          console.log("[Recovery] Local backup has newer changes, using local data");
+          console.log("[Recovery] Server hash:", serverHash);
+          console.log("[Recovery] Local hash:", localHash);
+          setLocalCampaigns(localBackup.campaigns);
+          // Immediately sync local to server
+          syncCampaignsToServer(localBackup.campaigns).then(success => {
+            if (success) {
+              console.log("[Recovery] Successfully synced local changes to server");
+              setLastSyncTime(new Date());
+              setHasUnsyncedChanges(false);
+            }
+          });
+          return;
+        }
       }
+    }
+
+    // Default: use server data
+    setLocalCampaigns(serverCampaigns);
+    setLastSyncTime(new Date());
+    // Update localStorage backup with server data
+    if (serverCampaigns.length > 0) {
+      saveToLocalStorage(serverCampaigns);
     }
   }, [outreachData]);
 
@@ -251,19 +301,34 @@ export default function OutreachPage() {
   // Force sync before page unload using sendBeacon for reliability
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (hasUnsyncedChanges && pendingCampaignsRef.current) {
-        // Use sendBeacon for reliable sync on page unload
+      // Always try to sync current local campaigns on unload
+      // This catches any changes that might not have been synced
+      const campaignsToSync = pendingCampaignsRef.current || (hasUnsyncedChanges ? localCampaigns : null);
+      if (campaignsToSync && campaignsToSync.length > 0) {
+        // Use sendBeacon with proper content type for reliable sync on page unload
         // sendBeacon is designed to survive page navigation
-        const data = JSON.stringify({ campaigns: pendingCampaignsRef.current });
-        navigator.sendBeacon("/api/outreach/campaigns", data);
+        const blob = new Blob(
+          [JSON.stringify({ campaigns: campaignsToSync })],
+          { type: 'application/json' }
+        );
+        const sent = navigator.sendBeacon("/api/outreach/campaigns", blob);
+        console.log("[Unload] sendBeacon result:", sent);
       }
     };
 
-    // Also sync when tab becomes hidden (user switches tabs)
+    // Also sync when tab becomes hidden (user switches tabs or navigates)
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden' && pendingCampaignsRef.current) {
-        // Fire sync immediately when tab is hidden
-        syncCampaignsToServer(pendingCampaignsRef.current);
+      if (document.visibilityState === 'hidden') {
+        const campaignsToSync = pendingCampaignsRef.current || (hasUnsyncedChanges ? localCampaigns : null);
+        if (campaignsToSync && campaignsToSync.length > 0) {
+          // Use sendBeacon for visibility change too - more reliable than fetch
+          const blob = new Blob(
+            [JSON.stringify({ campaigns: campaignsToSync })],
+            { type: 'application/json' }
+          );
+          navigator.sendBeacon("/api/outreach/campaigns", blob);
+          console.log("[Visibility] Sent beacon on tab hide");
+        }
       }
     };
 
@@ -274,7 +339,7 @@ export default function OutreachPage() {
       window.removeEventListener('beforeunload', handleBeforeUnload);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [hasUnsyncedChanges]);
+  }, [hasUnsyncedChanges, localCampaigns]);
 
   // Helper to update campaigns and sync to server
   const updateLocalCampaigns = useCallback((updater: (prev: OutreachPodcast[]) => OutreachPodcast[]) => {
@@ -286,18 +351,41 @@ export default function OutreachPage() {
     });
   }, [scheduleSync]);
 
-  // Function to update campaign stage locally and sync
-  // Note: Uses ONLY the debounced bulk sync to avoid race conditions
-  // Previously had dual sync (individual POST + debounced PUT) which caused data loss
+  // Function to update campaign stage locally and sync IMMEDIATELY
+  // Stage changes (drag-drop) sync immediately to ensure persistence
   const updateCampaignStage = useCallback((podcastId: string, newStage: OutreachStage) => {
-    updateLocalCampaigns(prev =>
-      prev.map(campaign =>
+    setLocalCampaigns(prev => {
+      const updated = prev.map(campaign =>
         campaign.id === podcastId
           ? { ...campaign, status: newStage }
           : campaign
-      )
-    );
-  }, [updateLocalCampaigns]);
+      );
+
+      // Save to localStorage immediately
+      saveToLocalStorage(updated);
+
+      // Sync to server IMMEDIATELY (no debounce for stage changes)
+      // This ensures drag operations are saved even if user navigates away quickly
+      setIsSyncing(true);
+      setHasUnsyncedChanges(true);
+
+      syncCampaignsToServer(updated).then(success => {
+        setIsSyncing(false);
+        if (success) {
+          setHasUnsyncedChanges(false);
+          setLastSyncTime(new Date());
+          pendingCampaignsRef.current = null;
+          console.log("[Sync] Stage change saved successfully");
+        } else {
+          setSyncError("Failed to save. Click to retry.");
+          // Keep in pending so visibility/unload handlers can retry
+          pendingCampaignsRef.current = updated;
+        }
+      });
+
+      return updated;
+    });
+  }, []);
 
   // Manual sync function
   const handleManualSync = async () => {
