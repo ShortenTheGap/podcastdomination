@@ -35,9 +35,22 @@ interface LocalStorageBackup {
   statusHash: string;
 }
 
-// Create a hash of campaign statuses to detect changes
+// Create a hash of campaign data to detect changes
+// IMPORTANT: This must include ALL data that needs to be preserved, not just status
+function createContentHash(campaigns: OutreachPodcast[]): string {
+  return campaigns.map(c => {
+    // Include email sequence info to detect when emails are generated/modified
+    const emailInfo = (c.emailSequence || [])
+      .map(e => `${e.type}:${e.status}:${e.subject?.slice(0, 20) || ''}`)
+      .join(',');
+    // Include response type and other important fields
+    return `${c.id}:${c.status}:${c.responseType || ''}:${(c.emailSequence || []).length}:${emailInfo}`;
+  }).sort().join('|');
+}
+
+// Legacy alias for backwards compatibility
 function createStatusHash(campaigns: OutreachPodcast[]): string {
-  return campaigns.map(c => `${c.id}:${c.status}`).sort().join('|');
+  return createContentHash(campaigns);
 }
 
 // Save campaigns to localStorage as backup
@@ -231,13 +244,21 @@ export default function OutreachPage() {
       // If hashes differ, local has unsaved changes - use local
       if (serverHash !== localHash) {
         const localTime = new Date(localBackup.savedAt).getTime();
-        const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
+        const thirtyMinutesAgo = Date.now() - 30 * 60 * 1000;
 
-        // Only use local if it was saved within the last 5 minutes (recent changes)
-        if (localTime > fiveMinutesAgo) {
-          console.log("[Recovery] Local backup has newer changes, using local data");
+        // Check if local has MORE content (more emails generated)
+        const localEmailCount = localBackup.campaigns.reduce((sum, c) => sum + (c.emailSequence?.length || 0), 0);
+        const serverEmailCount = serverCampaigns.reduce((sum: number, c: OutreachPodcast) => sum + (c.emailSequence?.length || 0), 0);
+        const localHasMoreContent = localEmailCount > serverEmailCount;
+
+        // Use local if:
+        // 1. It was saved within the last 30 minutes (extended from 5 min), OR
+        // 2. It has MORE content than server (emails were generated locally)
+        if (localTime > thirtyMinutesAgo || localHasMoreContent) {
+          console.log("[Recovery] Local backup has unsaved changes, using local data");
           console.log("[Recovery] Server hash:", serverHash);
           console.log("[Recovery] Local hash:", localHash);
+          console.log("[Recovery] Local email count:", localEmailCount, "Server email count:", serverEmailCount);
           setLocalCampaigns(localBackup.campaigns);
           // Immediately sync local to server
           syncCampaignsToServer(localBackup.campaigns).then(success => {
@@ -312,12 +333,19 @@ export default function OutreachPage() {
   }, []);
 
   // Force sync before page unload using sendBeacon for reliability
+  // Also warn user if there are pending changes
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       // Always try to sync current local campaigns on unload
       // This catches any changes that might not have been synced
       const campaignsToSync = pendingCampaignsRef.current || (hasUnsyncedChanges ? localCampaigns : null);
       if (campaignsToSync && campaignsToSync.length > 0) {
+        // Show browser warning if there are pending changes
+        if (hasUnsyncedChanges || hasUnsyncedChangesRef.current || isSyncing) {
+          e.preventDefault();
+          e.returnValue = ''; // Required for Chrome
+        }
+
         // Use sendBeacon with proper content type for reliable sync on page unload
         // sendBeacon is designed to survive page navigation
         const blob = new Blob(
@@ -352,7 +380,7 @@ export default function OutreachPage() {
       window.removeEventListener('beforeunload', handleBeforeUnload);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [hasUnsyncedChanges, localCampaigns]);
+  }, [hasUnsyncedChanges, localCampaigns, isSyncing]);
 
   // Helper to update campaigns and sync to server
   const updateLocalCampaigns = useCallback((updater: (prev: OutreachPodcast[]) => OutreachPodcast[]) => {
@@ -394,6 +422,42 @@ export default function OutreachPage() {
         } else {
           setSyncError("Failed to save. Click to retry.");
           // Keep in pending so visibility/unload handlers can retry
+          pendingCampaignsRef.current = updated;
+        }
+      });
+
+      return updated;
+    });
+  }, []);
+
+  // Function to update campaign with IMMEDIATE sync (no debounce)
+  // Use this for critical updates like email generation that must persist immediately
+  const updateCampaignImmediate = useCallback((podcastId: string, updates: Partial<OutreachPodcast>) => {
+    setLocalCampaigns(prev => {
+      const updated = prev.map(campaign =>
+        campaign.id === podcastId
+          ? { ...campaign, ...updates }
+          : campaign
+      );
+
+      // Save to localStorage immediately
+      saveToLocalStorage(updated);
+
+      // Sync to server IMMEDIATELY (no debounce for critical changes)
+      setIsSyncing(true);
+      setHasUnsyncedChanges(true);
+      hasUnsyncedChangesRef.current = true;
+
+      syncCampaignsToServer(updated).then(success => {
+        setIsSyncing(false);
+        if (success) {
+          setHasUnsyncedChanges(false);
+          hasUnsyncedChangesRef.current = false;
+          setLastSyncTime(new Date());
+          pendingCampaignsRef.current = null;
+          console.log("[Sync] Campaign update saved immediately");
+        } else {
+          setSyncError("Failed to save. Click to retry.");
           pendingCampaignsRef.current = updated;
         }
       });
@@ -616,7 +680,7 @@ export default function OutreachPage() {
             console.log("[Update] Campaign updated locally, will sync to server");
           }}
           onUpdateCampaign={(id, updates) => {
-            // Update local campaigns and sync to server
+            // Update local campaigns with debounced sync (for minor changes)
             updateLocalCampaigns(prev =>
               prev.map(campaign =>
                 campaign.id === id
@@ -624,6 +688,16 @@ export default function OutreachPage() {
                   : campaign
               )
             );
+            // Also update the selected podcast so the sidebar reflects changes
+            setSelectedPodcast(prev =>
+              prev && prev.id === id
+                ? { ...prev, ...updates }
+                : prev
+            );
+          }}
+          onUpdateCampaignImmediate={(id, updates) => {
+            // IMMEDIATE sync for critical updates like email generation
+            updateCampaignImmediate(id, updates);
             // Also update the selected podcast so the sidebar reflects changes
             setSelectedPodcast(prev =>
               prev && prev.id === id
@@ -895,11 +969,13 @@ function PodcastOutreachDetail({
   onClose,
   onUpdate,
   onUpdateCampaign,
+  onUpdateCampaignImmediate,
 }: {
   podcast: OutreachPodcast;
   onClose: () => void;
   onUpdate: () => void;
   onUpdateCampaign: (id: string, updates: Partial<OutreachPodcast>) => void;
+  onUpdateCampaignImmediate: (id: string, updates: Partial<OutreachPodcast>) => void;
 }) {
   const [selectedResponse, setSelectedResponse] = useState<ResponseType | null>(podcast.responseType);
   const [editingEmail, setEditingEmail] = useState<EmailInSequence | null>(null);
@@ -1044,6 +1120,7 @@ function PodcastOutreachDetail({
             onEditEmail={handleEditEmail}
             onViewEmail={setViewingEmail}
             onUpdateCampaign={onUpdateCampaign}
+            onUpdateCampaignImmediate={onUpdateCampaignImmediate}
           />
         )}
       </div>
@@ -1058,12 +1135,14 @@ function EmailSequenceTimeline({
   onEditEmail,
   onViewEmail,
   onUpdateCampaign,
+  onUpdateCampaignImmediate,
 }: {
   podcast: OutreachPodcast;
   onUpdate: () => void;
   onEditEmail: (email: EmailInSequence) => void;
   onViewEmail: (email: EmailInSequence) => void;
   onUpdateCampaign: (id: string, updates: Partial<OutreachPodcast>) => void;
+  onUpdateCampaignImmediate: (id: string, updates: Partial<OutreachPodcast>) => void;
 }) {
   const [sendingEmailId, setSendingEmailId] = useState<string | null>(null);
   const [isGeneratingSequence, setIsGeneratingSequence] = useState(false);
@@ -1128,7 +1207,8 @@ function EmailSequenceTimeline({
       if (res.ok) {
         const data = await res.json();
         if (data.emailSequence) {
-          onUpdateCampaign(podcast.id, {
+          // Use IMMEDIATE sync for email generation - critical data that must persist
+          onUpdateCampaignImmediate(podcast.id, {
             emailSequence: data.emailSequence,
             status: "drafting" as OutreachStage,
           });
@@ -1181,7 +1261,8 @@ function EmailSequenceTimeline({
             repliedAt: null,
           },
         ];
-        onUpdateCampaign(podcast.id, {
+        // Use IMMEDIATE sync for email generation - critical data that must persist
+        onUpdateCampaignImmediate(podcast.id, {
           emailSequence: fallbackSequence,
           status: "drafting" as OutreachStage,
         });
@@ -1318,7 +1399,8 @@ function EmailSequenceTimeline({
         });
 
         // Update campaign: mark as ready_to_send (now "Sent - Awaiting Response") and set next follow-up date
-        onUpdateCampaign(podcast.id, {
+        // Use IMMEDIATE sync - campaign start is critical and must persist
+        onUpdateCampaignImmediate(podcast.id, {
           emailSequence: newSequence,
           lastContactedAt: now.toISOString(),
           nextFollowUpAt: followUp1Date.toISOString(),
