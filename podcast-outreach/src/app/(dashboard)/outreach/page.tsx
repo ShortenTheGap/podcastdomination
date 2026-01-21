@@ -84,24 +84,30 @@ const RESPONSE_BRANCHES = [
   { id: "opted_out", label: "Opted Out", description: "Do not contact", color: "text-slate-600", bgColor: "bg-slate-100" },
 ];
 
-// Sync campaigns to server (persistent storage)
-async function syncCampaignsToServer(campaigns: OutreachPodcast[]): Promise<boolean> {
-  try {
-    const res = await fetch("/api/outreach/campaigns", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ campaigns }),
-    });
-    if (!res.ok) {
-      console.error("Failed to sync campaigns to server");
-      return false;
+// Sync campaigns to server (persistent storage) with retry logic
+async function syncCampaignsToServer(campaigns: OutreachPodcast[], retries = 3): Promise<boolean> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch("/api/outreach/campaigns", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ campaigns }),
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      console.log("[Sync] Campaigns synced to server successfully");
+      return true;
+    } catch (error) {
+      console.error(`[Sync] Attempt ${attempt}/${retries} failed:`, error);
+      if (attempt < retries) {
+        // Exponential backoff: 500ms, 1000ms, 2000ms
+        await new Promise(resolve => setTimeout(resolve, 500 * Math.pow(2, attempt - 1)));
+      }
     }
-    console.log("[Sync] Campaigns synced to server successfully");
-    return true;
-  } catch (error) {
-    console.error("Error syncing campaigns:", error);
-    return false;
   }
+  console.error("[Sync] All retry attempts failed");
+  return false;
 }
 
 export default function OutreachPage() {
@@ -116,9 +122,12 @@ export default function OutreachPage() {
   // Local state for campaigns - server is the source of truth
   const [localCampaigns, setLocalCampaigns] = useState<OutreachPodcast[]>([]);
   const [hasUnsyncedChanges, setHasUnsyncedChanges] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   // Debounce timer for auto-sync
   const syncTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // Track pending campaigns to sync (ensures we always sync the latest)
+  const pendingCampaignsRef = useRef<OutreachPodcast[] | null>(null);
 
   const queryClient = useQueryClient();
 
@@ -144,7 +153,11 @@ export default function OutreachPage() {
   }, [outreachData]);
 
   // Auto-sync function with debouncing
+  // Uses a ref to always sync the latest campaigns, avoiding stale closure issues
   const scheduleSync = useCallback((campaigns: OutreachPodcast[]) => {
+    // Always update the pending campaigns to the latest
+    pendingCampaignsRef.current = campaigns;
+
     // Clear any existing timer
     if (syncTimerRef.current) {
       clearTimeout(syncTimerRef.current);
@@ -152,17 +165,26 @@ export default function OutreachPage() {
 
     // Set flag for unsaved changes
     setHasUnsyncedChanges(true);
+    setSyncError(null);
 
-    // Schedule sync after 1 second of inactivity
+    // Schedule sync after 500ms of inactivity (reduced from 1000ms for faster feedback)
     syncTimerRef.current = setTimeout(async () => {
+      // Use the latest pending campaigns
+      const campaignsToSync = pendingCampaignsRef.current;
+      if (!campaignsToSync) return;
+
       setIsSyncing(true);
-      const success = await syncCampaignsToServer(campaigns);
+      const success = await syncCampaignsToServer(campaignsToSync);
       setIsSyncing(false);
+
       if (success) {
         setHasUnsyncedChanges(false);
         setLastSyncTime(new Date());
+        pendingCampaignsRef.current = null;
+      } else {
+        setSyncError("Failed to save changes. Click to retry.");
       }
-    }, 1000);
+    }, 500);
   }, []);
 
   // Cleanup timer on unmount
@@ -174,20 +196,33 @@ export default function OutreachPage() {
     };
   }, []);
 
-  // Force sync before page unload
+  // Force sync before page unload using sendBeacon for reliability
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (hasUnsyncedChanges) {
-        // Sync immediately before leaving
-        syncCampaignsToServer(localCampaigns);
-        e.preventDefault();
-        e.returnValue = '';
+      if (hasUnsyncedChanges && pendingCampaignsRef.current) {
+        // Use sendBeacon for reliable sync on page unload
+        // sendBeacon is designed to survive page navigation
+        const data = JSON.stringify({ campaigns: pendingCampaignsRef.current });
+        navigator.sendBeacon("/api/outreach/campaigns", data);
+      }
+    };
+
+    // Also sync when tab becomes hidden (user switches tabs)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden' && pendingCampaignsRef.current) {
+        // Fire sync immediately when tab is hidden
+        syncCampaignsToServer(pendingCampaignsRef.current);
       }
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [hasUnsyncedChanges, localCampaigns]);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [hasUnsyncedChanges]);
 
   // Helper to update campaigns and sync to server
   const updateLocalCampaigns = useCallback((updater: (prev: OutreachPodcast[]) => OutreachPodcast[]) => {
@@ -200,6 +235,8 @@ export default function OutreachPage() {
   }, [scheduleSync]);
 
   // Function to update campaign stage locally and sync
+  // Note: Uses ONLY the debounced bulk sync to avoid race conditions
+  // Previously had dual sync (individual POST + debounced PUT) which caused data loss
   const updateCampaignStage = useCallback((podcastId: string, newStage: OutreachStage) => {
     updateLocalCampaigns(prev =>
       prev.map(campaign =>
@@ -208,23 +245,20 @@ export default function OutreachPage() {
           : campaign
       )
     );
-
-    // Also fire individual API call for immediate persistence
-    fetch(`/api/outreach/campaigns/${podcastId}/response`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ stage: newStage }),
-    }).catch(err => console.log("Individual update failed:", err));
   }, [updateLocalCampaigns]);
 
   // Manual sync function
   const handleManualSync = async () => {
+    setSyncError(null);
     setIsSyncing(true);
     const success = await syncCampaignsToServer(localCampaigns);
     setIsSyncing(false);
     if (success) {
       setHasUnsyncedChanges(false);
       setLastSyncTime(new Date());
+      pendingCampaignsRef.current = null;
+    } else {
+      setSyncError("Failed to save. Click to retry.");
     }
   };
 
@@ -292,13 +326,21 @@ export default function OutreachPage() {
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Saving...
               </span>
+            ) : syncError ? (
+              <button
+                onClick={handleManualSync}
+                className="flex items-center gap-1 text-red-600 hover:text-red-700"
+              >
+                <AlertCircle className="h-4 w-4" />
+                {syncError}
+              </button>
             ) : hasUnsyncedChanges ? (
               <button
                 onClick={handleManualSync}
                 className="flex items-center gap-1 text-amber-600 hover:text-amber-700"
               >
                 <Save className="h-4 w-4" />
-                Save changes
+                Saving...
               </button>
             ) : lastSyncTime ? (
               <span className="flex items-center gap-1 text-green-600">

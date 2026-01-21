@@ -204,10 +204,35 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    // Handle both JSON and text/plain (from sendBeacon)
+    const contentType = request.headers.get("content-type") || "";
+    let body;
+
+    if (contentType.includes("application/json")) {
+      body = await request.json();
+    } else {
+      // sendBeacon sends as text/plain
+      const text = await request.text();
+      try {
+        body = JSON.parse(text);
+      } catch {
+        return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+      }
+    }
+
     const { podcastId, action, campaigns } = body;
 
-    // Handle bulk sync action
+    // Handle bulk sync action (from sendBeacon or regular POST)
+    // sendBeacon will send { campaigns: [...] } directly
+    if (campaigns && Array.isArray(campaigns)) {
+      await syncDemoCampaigns(campaigns as DemoCampaign[]);
+      return NextResponse.json({
+        success: true,
+        message: `Synced ${campaigns.length} campaigns`,
+      });
+    }
+
+    // Legacy sync action
     if (action === "sync" && campaigns) {
       await syncDemoCampaigns(campaigns as DemoCampaign[]);
       return NextResponse.json({
@@ -243,9 +268,26 @@ export async function POST(request: NextRequest) {
 }
 
 // PUT endpoint for syncing full campaign data
+// Also handles POST from sendBeacon (which can't use PUT)
 export async function PUT(request: NextRequest) {
   try {
-    const { campaigns } = await request.json();
+    // Handle both JSON and text/plain (from sendBeacon)
+    const contentType = request.headers.get("content-type") || "";
+    let data;
+
+    if (contentType.includes("application/json")) {
+      data = await request.json();
+    } else {
+      // sendBeacon sends as text/plain
+      const text = await request.text();
+      try {
+        data = JSON.parse(text);
+      } catch {
+        return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+      }
+    }
+
+    const { campaigns } = data;
 
     if (!campaigns || !Array.isArray(campaigns)) {
       return NextResponse.json({ error: "Campaigns array required" }, { status: 400 });

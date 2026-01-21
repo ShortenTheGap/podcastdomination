@@ -39,6 +39,24 @@ const CAMPAIGNS_FILE = path.join(DATA_DIR, "campaigns.json");
 let campaignsCache: StoredCampaign[] | null = null;
 let cacheLoaded = false;
 
+// Simple write lock to prevent concurrent file writes
+let writeLock: Promise<void> = Promise.resolve();
+
+async function withWriteLock<T>(fn: () => Promise<T>): Promise<T> {
+  // Wait for any pending write to complete
+  await writeLock;
+  // Create a new lock promise
+  let releaseLock: () => void;
+  writeLock = new Promise((resolve) => {
+    releaseLock = resolve;
+  });
+  try {
+    return await fn();
+  } finally {
+    releaseLock!();
+  }
+}
+
 // Ensure data directory exists
 async function ensureDataDir(): Promise<void> {
   try {
@@ -97,72 +115,80 @@ export async function updateCampaign(
   id: string,
   updates: Partial<StoredCampaign>
 ): Promise<boolean> {
-  const campaigns = await getCampaigns();
-  const index = campaigns.findIndex((c) => c.id === id);
+  return withWriteLock(async () => {
+    const campaigns = await getCampaigns();
+    const index = campaigns.findIndex((c) => c.id === id);
 
-  if (index !== -1) {
-    campaignsCache![index] = {
-      ...campaigns[index],
-      ...updates,
-      updatedAt: new Date().toISOString(),
-    };
-    await saveToFile(campaignsCache!);
-    console.log(`[Storage] Updated campaign ${id}:`, Object.keys(updates));
-    return true;
-  }
+    if (index !== -1) {
+      campaignsCache![index] = {
+        ...campaigns[index],
+        ...updates,
+        updatedAt: new Date().toISOString(),
+      };
+      await saveToFile(campaignsCache!);
+      console.log(`[Storage] Updated campaign ${id}:`, Object.keys(updates));
+      return true;
+    }
 
-  console.log(`[Storage] Campaign ${id} not found for update`);
-  return false;
+    console.log(`[Storage] Campaign ${id} not found for update`);
+    return false;
+  });
 }
 
 // Add a new campaign
 export async function addCampaign(campaign: StoredCampaign): Promise<void> {
-  const campaigns = await getCampaigns();
-  const existingIndex = campaigns.findIndex((c) => c.id === campaign.id);
+  return withWriteLock(async () => {
+    const campaigns = await getCampaigns();
+    const existingIndex = campaigns.findIndex((c) => c.id === campaign.id);
 
-  if (existingIndex !== -1) {
-    // Update existing
-    campaignsCache![existingIndex] = {
-      ...campaign,
-      updatedAt: new Date().toISOString(),
-    };
-  } else {
-    // Add new
-    campaignsCache!.push({
-      ...campaign,
-      createdAt: campaign.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    });
-  }
+    if (existingIndex !== -1) {
+      // Update existing
+      campaignsCache![existingIndex] = {
+        ...campaign,
+        updatedAt: new Date().toISOString(),
+      };
+    } else {
+      // Add new
+      campaignsCache!.push({
+        ...campaign,
+        createdAt: campaign.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+    }
 
-  await saveToFile(campaignsCache!);
-  console.log(`[Storage] Added/updated campaign ${campaign.id}`);
+    await saveToFile(campaignsCache!);
+    console.log(`[Storage] Added/updated campaign ${campaign.id}`);
+  });
 }
 
 // Bulk save/sync all campaigns (replaces entire dataset)
 export async function syncCampaigns(campaigns: StoredCampaign[]): Promise<void> {
-  campaignsCache = campaigns.map((c) => ({
-    ...c,
-    updatedAt: new Date().toISOString(),
-  }));
-  cacheLoaded = true;
-  await saveToFile(campaignsCache);
-  console.log(`[Storage] Synced ${campaigns.length} campaigns`);
+  return withWriteLock(async () => {
+    campaignsCache = campaigns.map((c) => ({
+      ...c,
+      updatedAt: new Date().toISOString(),
+    }));
+    cacheLoaded = true;
+    await saveToFile(campaignsCache);
+    console.log(`[Storage] Synced ${campaigns.length} campaigns`);
+  });
 }
 
 // Delete a campaign
 export async function deleteCampaign(id: string): Promise<boolean> {
-  const campaigns = await getCampaigns();
-  const index = campaigns.findIndex((c) => c.id === id);
+  return withWriteLock(async () => {
+    const campaigns = await getCampaigns();
+    const index = campaigns.findIndex((c) => c.id === id);
 
-  if (index !== -1) {
-    campaignsCache!.splice(index, 1);
-    await saveToFile(campaignsCache!);
-    console.log(`[Storage] Deleted campaign ${id}`);
-    return true;
-  }
+    if (index !== -1) {
+      campaignsCache!.splice(index, 1);
+      await saveToFile(campaignsCache!);
+      console.log(`[Storage] Deleted campaign ${id}`);
+      return true;
+    }
 
-  return false;
+    return false;
+  });
 }
 
 // Clear cache (useful for testing)
@@ -173,9 +199,19 @@ export function clearCache(): void {
 
 // Initialize with default data if empty
 export async function initializeWithDefaults(defaults: StoredCampaign[]): Promise<void> {
-  const existing = await getCampaigns();
-  if (existing.length === 0) {
-    await syncCampaigns(defaults);
-    console.log(`[Storage] Initialized with ${defaults.length} default campaigns`);
-  }
+  return withWriteLock(async () => {
+    // Re-check inside lock to prevent race condition
+    if (!cacheLoaded) {
+      campaignsCache = await loadFromFile();
+      cacheLoaded = true;
+    }
+    if (campaignsCache!.length === 0) {
+      campaignsCache = defaults.map((c) => ({
+        ...c,
+        updatedAt: new Date().toISOString(),
+      }));
+      await saveToFile(campaignsCache);
+      console.log(`[Storage] Initialized with ${defaults.length} default campaigns`);
+    }
+  });
 }
