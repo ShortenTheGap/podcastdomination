@@ -1089,20 +1089,7 @@ function IntegrationsTab() {
             </div>
           )}
           {integrations?.gmail?.configured && !gmailEmail && (
-            <div className="text-sm bg-blue-50 border border-blue-200 p-4 rounded-lg space-y-2">
-              <p className="text-blue-800 flex items-center gap-2 font-medium">
-                <AlertCircle className="h-4 w-4" />
-                Before connecting, ensure these are configured in Google Cloud Console:
-              </p>
-              <ul className="list-disc list-inside text-blue-700 space-y-1 ml-6">
-                <li><strong>Authorized redirect URI:</strong> <code className="bg-blue-100 px-1 rounded">{typeof window !== &apos;undefined&apos; ? window.location.origin : &apos;&apos;}/api/auth/gmail/callback</code></li>
-                <li><strong>OAuth consent screen:</strong> Add your email ({`gus@primelive.ai`}) to &quot;Test users&quot;</li>
-                <li><strong>Required scopes:</strong> gmail.send, gmail.readonly, gmail.modify</li>
-              </ul>
-              <p className="text-blue-600 text-xs mt-2">
-                Error 400 &quot;invalid_request&quot; usually means the redirect URI doesn&apos;t match or your email isn&apos;t a test user.
-              </p>
-            </div>
+            <GmailSetupGuide />
           )}
           {testResults.gmail && (
             <TestResultBadge result={testResults.gmail} />
@@ -1190,67 +1177,7 @@ function IntegrationsTab() {
       </div>
 
       {/* Environment Variables Reference */}
-      <div className="bg-white border border-slate-200 rounded-lg">
-        <div className="px-6 py-4 border-b border-slate-200">
-          <h2 className="font-semibold text-slate-900">Environment Variables</h2>
-          <p className="text-sm text-slate-600">Required for deployment - add to your .env file</p>
-        </div>
-        <div className="p-4">
-          <pre className="bg-slate-900 text-slate-100 rounded-lg p-4 text-sm overflow-x-auto">
-{`# Database
-DATABASE_URL="postgresql://..."
-
-# AI Services
-ANTHROPIC_API_KEY="sk-ant-..."
-OPENAI_API_KEY="sk-..."  # Optional
-
-# Gmail OAuth
-# IMPORTANT: GOOGLE_REDIRECT_URI must match EXACTLY what's configured in Google Cloud Console
-GOOGLE_CLIENT_ID="..."
-GOOGLE_CLIENT_SECRET="..."
-GOOGLE_REDIRECT_URI="${typeof window !== 'undefined' ? window.location.origin : 'https://your-railway-app.railway.app'}/api/auth/gmail/callback"
-
-# Spotify (for podcast discovery)
-SPOTIFY_CLIENT_ID="..."
-SPOTIFY_CLIENT_SECRET="..."
-
-# PodcastIndex (for trending & contact info)
-PODCAST_INDEX_API_KEY="..."
-PODCAST_INDEX_API_SECRET="..."
-
-# ListenNotes (optional)
-LISTEN_NOTES_API_KEY="..."
-
-# App Config
-NEXT_PUBLIC_APP_URL="${typeof window !== 'undefined' ? window.location.origin : 'https://your-railway-app.railway.app'}"`}
-          </pre>
-        </div>
-
-        {/* Gmail OAuth Setup Guide */}
-        <div className="px-6 pb-6">
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-            <h3 className="font-medium text-yellow-900 mb-2">Gmail OAuth Troubleshooting</h3>
-            <p className="text-sm text-yellow-800 mb-2">
-              If you see <strong>&quot;Error 400: invalid_request&quot;</strong> or <strong>&quot;Access blocked&quot;</strong>:
-            </p>
-            <ol className="list-decimal list-inside text-sm text-yellow-700 space-y-1.5">
-              <li>
-                <strong>Check redirect URI:</strong> In Google Cloud Console → Credentials → OAuth 2.0 Client IDs,
-                add this exact URI: <code className="bg-yellow-100 px-1 rounded">{typeof window !== 'undefined' ? window.location.origin : 'YOUR_RAILWAY_URL'}/api/auth/gmail/callback</code>
-              </li>
-              <li>
-                <strong>Add test user:</strong> OAuth consent screen → Test users → Add your email address
-              </li>
-              <li>
-                <strong>Enable APIs:</strong> Make sure Gmail API is enabled in your Google Cloud project
-              </li>
-              <li>
-                <strong>Update env vars:</strong> Set GOOGLE_REDIRECT_URI to your deployed URL (not localhost)
-              </li>
-            </ol>
-          </div>
-        </div>
-      </div>
+      <EnvironmentVariablesSection />
     </div>
   );
 }
@@ -1348,6 +1275,116 @@ function TestResultBadge({ result }: { result: { success: boolean; message: stri
         <X className="h-4 w-4" />
       )}
       {result.message}
+    </div>
+  );
+}
+
+// Gmail Setup Guide - handles window reference safely
+function GmailSetupGuide() {
+  const [origin, setOrigin] = useState("");
+
+  useEffect(() => {
+    setOrigin(window.location.origin);
+  }, []);
+
+  const redirectUri = origin ? `${origin}/api/auth/gmail/callback` : "YOUR_APP_URL/api/auth/gmail/callback";
+
+  return (
+    <div className="text-sm bg-blue-50 border border-blue-200 p-4 rounded-lg space-y-2">
+      <p className="text-blue-800 flex items-center gap-2 font-medium">
+        <AlertCircle className="h-4 w-4" />
+        Before connecting, ensure these are configured in Google Cloud Console:
+      </p>
+      <ul className="list-disc list-inside text-blue-700 space-y-1 ml-6">
+        <li>
+          <strong>Authorized redirect URI:</strong>{" "}
+          <code className="bg-blue-100 px-1 rounded">{redirectUri}</code>
+        </li>
+        <li>
+          <strong>OAuth consent screen:</strong> Add your email to &quot;Test users&quot;
+        </li>
+        <li>
+          <strong>Required scopes:</strong> gmail.send, gmail.readonly, gmail.modify
+        </li>
+      </ul>
+      <p className="text-blue-600 text-xs mt-2">
+        Error 400 &quot;invalid_request&quot; usually means the redirect URI does not match or your email is not a test user.
+      </p>
+    </div>
+  );
+}
+
+// Environment Variables Section - handles window reference safely
+function EnvironmentVariablesSection() {
+  const [origin, setOrigin] = useState("https://your-railway-app.railway.app");
+
+  useEffect(() => {
+    setOrigin(window.location.origin);
+  }, []);
+
+  const redirectUri = `${origin}/api/auth/gmail/callback`;
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-lg">
+      <div className="px-6 py-4 border-b border-slate-200">
+        <h2 className="font-semibold text-slate-900">Environment Variables</h2>
+        <p className="text-sm text-slate-600">Required for deployment - add to your .env file</p>
+      </div>
+      <div className="p-4">
+        <pre className="bg-slate-900 text-slate-100 rounded-lg p-4 text-sm overflow-x-auto">
+{`# Database
+DATABASE_URL="postgresql://..."
+
+# AI Services
+ANTHROPIC_API_KEY="sk-ant-..."
+OPENAI_API_KEY="sk-..."  # Optional
+
+# Gmail OAuth
+# IMPORTANT: GOOGLE_REDIRECT_URI must match EXACTLY what's configured in Google Cloud Console
+GOOGLE_CLIENT_ID="..."
+GOOGLE_CLIENT_SECRET="..."
+GOOGLE_REDIRECT_URI="${redirectUri}"
+
+# Spotify (for podcast discovery)
+SPOTIFY_CLIENT_ID="..."
+SPOTIFY_CLIENT_SECRET="..."
+
+# PodcastIndex (for trending & contact info)
+PODCAST_INDEX_API_KEY="..."
+PODCAST_INDEX_API_SECRET="..."
+
+# ListenNotes (optional)
+LISTEN_NOTES_API_KEY="..."
+
+# App Config
+NEXT_PUBLIC_APP_URL="${origin}"`}
+        </pre>
+      </div>
+
+      {/* Gmail OAuth Setup Guide */}
+      <div className="px-6 pb-6">
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <h3 className="font-medium text-yellow-900 mb-2">Gmail OAuth Troubleshooting</h3>
+          <p className="text-sm text-yellow-800 mb-2">
+            If you see <strong>&quot;Error 400: invalid_request&quot;</strong> or <strong>&quot;Access blocked&quot;</strong>:
+          </p>
+          <ol className="list-decimal list-inside text-sm text-yellow-700 space-y-1.5">
+            <li>
+              <strong>Check redirect URI:</strong> In Google Cloud Console → Credentials → OAuth 2.0 Client IDs,
+              add this exact URI: <code className="bg-yellow-100 px-1 rounded">{redirectUri}</code>
+            </li>
+            <li>
+              <strong>Add test user:</strong> OAuth consent screen → Test users → Add your email address
+            </li>
+            <li>
+              <strong>Enable APIs:</strong> Make sure Gmail API is enabled in your Google Cloud project
+            </li>
+            <li>
+              <strong>Update env vars:</strong> Set GOOGLE_REDIRECT_URI to your deployed URL (not localhost)
+            </li>
+          </ol>
+        </div>
+      </div>
     </div>
   );
 }
