@@ -112,23 +112,23 @@ type ResponseType = "no_response" | "not_interested" | "interested_not_booked" |
 
 // Pipeline stage configuration
 const PIPELINE_STAGES: { id: OutreachStage; label: string; color: string; icon: React.ReactNode }[] = [
-  { id: "not_started", label: "Not Started", color: "bg-slate-100", icon: <Clock className="h-4 w-4" /> },
-  { id: "drafting", label: "Drafting", color: "bg-blue-100", icon: <Edit className="h-4 w-4" /> },
-  { id: "ready_to_send", label: "Ready to Send", color: "bg-amber-100", icon: <Mail className="h-4 w-4" /> },
-  { id: "sent_awaiting", label: "Awaiting Response", color: "bg-purple-100", icon: <Send className="h-4 w-4" /> },
-  { id: "follow_up_due", label: "Follow-up Due", color: "bg-orange-100", icon: <RefreshCw className="h-4 w-4" /> },
-  { id: "responded", label: "Responded", color: "bg-green-100", icon: <MessageSquare className="h-4 w-4" /> },
-  { id: "booked", label: "Booked", color: "bg-emerald-100", icon: <CheckCircle className="h-4 w-4" /> },
-  { id: "closed", label: "Closed", color: "bg-slate-200", icon: <Archive className="h-4 w-4" /> },
+  { id: "not_started", label: "Not Started", color: "bg-[#ead7a5]", icon: <Clock className="h-4 w-4" /> },
+  { id: "drafting", label: "Drafting", color: "bg-[#0a9396]/20", icon: <Edit className="h-4 w-4" /> },
+  { id: "ready_to_send", label: "Ready to Send", color: "bg-[#ed9b05]/30", icon: <Mail className="h-4 w-4" /> },
+  { id: "sent_awaiting", label: "Awaiting Response", color: "bg-[#006073]/20", icon: <Send className="h-4 w-4" /> },
+  { id: "follow_up_due", label: "Follow-up Due", color: "bg-[#cb6701]/30", icon: <RefreshCw className="h-4 w-4" /> },
+  { id: "responded", label: "Responded", color: "bg-[#94d2bd]/50", icon: <MessageSquare className="h-4 w-4" /> },
+  { id: "booked", label: "Booked", color: "bg-[#94d2bd]", icon: <CheckCircle className="h-4 w-4" /> },
+  { id: "closed", label: "Closed", color: "bg-[#006073]/30", icon: <Archive className="h-4 w-4" /> },
 ];
 
 // Response branch configuration
 const RESPONSE_BRANCHES = [
-  { id: "no_response", label: "No Response", description: "Continue follow-up sequence", color: "text-amber-600", bgColor: "bg-amber-50" },
-  { id: "not_interested", label: "Not Interested", description: "Close outreach", color: "text-red-600", bgColor: "bg-red-50" },
-  { id: "interested_not_booked", label: "Interested (Not Booked)", description: "Nurture sequence", color: "text-blue-600", bgColor: "bg-blue-50" },
-  { id: "booked", label: "Booked!", description: "Success - scheduled", color: "text-green-600", bgColor: "bg-green-50" },
-  { id: "opted_out", label: "Opted Out", description: "Do not contact", color: "text-slate-600", bgColor: "bg-slate-100" },
+  { id: "no_response", label: "No Response", description: "Continue follow-up sequence", color: "text-[#cb6701]", bgColor: "bg-[#ed9b05]/20" },
+  { id: "not_interested", label: "Not Interested", description: "Close outreach", color: "text-[#9d2227]", bgColor: "bg-[#9d2227]/10" },
+  { id: "interested_not_booked", label: "Interested (Not Booked)", description: "Nurture sequence", color: "text-[#0a9396]", bgColor: "bg-[#0a9396]/10" },
+  { id: "booked", label: "Booked!", description: "Success - scheduled", color: "text-[#006073]", bgColor: "bg-[#94d2bd]/30" },
+  { id: "opted_out", label: "Opted Out", description: "Do not contact", color: "text-[#006073]", bgColor: "bg-[#ead7a5]" },
 ];
 
 // Sync campaigns to server (persistent storage) with retry logic
@@ -453,8 +453,8 @@ export default function OutreachPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Email Campaigns</h1>
-          <p className="text-sm text-slate-700">
+          <h1 className="text-2xl font-bold text-[#02121a]">Email Campaigns</h1>
+          <p className="text-sm text-[#006073]">
             Manage outreach emails and follow-up sequences per podcast
           </p>
         </div>
@@ -462,14 +462,14 @@ export default function OutreachPage() {
           {/* Sync Status */}
           <div className="flex items-center gap-2 text-sm">
             {isSyncing ? (
-              <span className="flex items-center gap-1 text-blue-600">
+              <span className="flex items-center gap-1 text-[#0a9396]">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Saving...
               </span>
             ) : syncError ? (
               <button
                 onClick={handleManualSync}
-                className="flex items-center gap-1 text-red-600 hover:text-red-700"
+                className="flex items-center gap-1 text-[#9d2227] hover:text-[#b02013]"
               >
                 <AlertCircle className="h-4 w-4" />
                 {syncError}
@@ -477,13 +477,13 @@ export default function OutreachPage() {
             ) : hasUnsyncedChanges ? (
               <button
                 onClick={handleManualSync}
-                className="flex items-center gap-1 text-amber-600 hover:text-amber-700"
+                className="flex items-center gap-1 text-[#cb6701] hover:text-[#bb3f03]"
               >
                 <Save className="h-4 w-4" />
                 Saving...
               </button>
             ) : lastSyncTime ? (
-              <span className="flex items-center gap-1 text-green-600">
+              <span className="flex items-center gap-1 text-[#006073]">
                 <CheckCircle className="h-4 w-4" />
                 Saved
               </span>
@@ -491,14 +491,14 @@ export default function OutreachPage() {
           </div>
 
           {/* View Toggle */}
-          <div className="flex bg-slate-100 rounded-lg p-1">
+          <div className="flex bg-[#ead7a5] rounded-lg p-1">
             <button
               onClick={() => setViewMode("pipeline")}
               className={cn(
                 "px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
                 viewMode === "pipeline"
-                  ? "bg-white shadow text-slate-900"
-                  : "text-slate-600 hover:text-slate-900"
+                  ? "bg-white shadow text-[#02121a]"
+                  : "text-[#006073] hover:text-[#02121a]"
               )}
             >
               Pipeline
@@ -508,8 +508,8 @@ export default function OutreachPage() {
               className={cn(
                 "px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
                 viewMode === "list"
-                  ? "bg-white shadow text-slate-900"
-                  : "text-slate-600 hover:text-slate-900"
+                  ? "bg-white shadow text-[#02121a]"
+                  : "text-[#006073] hover:text-[#02121a]"
               )}
             >
               List
@@ -521,15 +521,15 @@ export default function OutreachPage() {
       {/* Stats Bar */}
       <div className="grid grid-cols-5 gap-4">
         <StatCard label="Total Campaigns" value={stats.total} icon={<Mail className="h-5 w-5" />} />
-        <StatCard label="Awaiting Response" value={stats.awaiting} icon={<Clock className="h-5 w-5" />} color="purple" />
+        <StatCard label="Awaiting Response" value={stats.awaiting} icon={<Clock className="h-5 w-5" />} color="teal" />
         <StatCard label="Follow-up Due" value={stats.followUpDue} icon={<RefreshCw className="h-5 w-5" />} color="orange" />
-        <StatCard label="Responded" value={stats.responded} icon={<MessageSquare className="h-5 w-5" />} color="blue" />
+        <StatCard label="Responded" value={stats.responded} icon={<MessageSquare className="h-5 w-5" />} color="mint" />
         <StatCard label="Booked" value={stats.booked} icon={<CheckCircle className="h-5 w-5" />} color="green" />
       </div>
 
       {isLoading ? (
         <div className="flex items-center justify-center h-64">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+          <Loader2 className="h-8 w-8 animate-spin text-[#0a9396]" />
         </div>
       ) : viewMode === "pipeline" ? (
         // Pipeline View
@@ -552,24 +552,24 @@ export default function OutreachPage() {
         </div>
       ) : (
         // List View
-        <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+        <div className="bg-white border border-[#94d2bd] rounded-lg overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-slate-50 border-b border-slate-200">
+              <thead className="bg-[#ead7a5] border-b border-[#94d2bd]">
                 <tr>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-slate-700">Podcast</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-slate-700">Stage</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-slate-700">Emails Sent</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-slate-700">Response</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-slate-700">Last Contact</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-slate-700">Next Action</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-[#02121a]">Podcast</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-[#02121a]">Stage</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-[#02121a]">Emails Sent</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-[#02121a]">Response</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-[#02121a]">Last Contact</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-[#02121a]">Next Action</th>
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-[#94d2bd]">
                 {podcasts.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-12 text-center text-slate-600">
+                    <td colSpan={7} className="px-4 py-12 text-center text-[#006073]">
                       No outreach campaigns yet. Add podcasts from the Discovery page.
                     </td>
                   </tr>
@@ -629,23 +629,23 @@ function StatCard({
   label: string;
   value: number;
   icon: React.ReactNode;
-  color?: "slate" | "purple" | "orange" | "blue" | "green";
+  color?: "slate" | "teal" | "orange" | "mint" | "green";
 }) {
   const colors = {
-    slate: "bg-slate-50 text-slate-600",
-    purple: "bg-purple-50 text-purple-600",
-    orange: "bg-orange-50 text-orange-600",
-    blue: "bg-blue-50 text-blue-600",
-    green: "bg-green-50 text-green-600",
+    slate: "bg-[#ead7a5] text-[#02121a]",
+    teal: "bg-[#006073]/20 text-[#006073]",
+    orange: "bg-[#cb6701]/20 text-[#cb6701]",
+    mint: "bg-[#94d2bd]/30 text-[#006073]",
+    green: "bg-[#94d2bd] text-[#02121a]",
   };
 
   return (
-    <div className="bg-white border border-slate-200 rounded-lg p-4">
+    <div className="bg-white border border-[#94d2bd] rounded-lg p-4">
       <div className="flex items-center gap-3">
         <div className={cn("p-2 rounded-lg", colors[color])}>{icon}</div>
         <div>
-          <p className="text-2xl font-bold text-slate-900">{value}</p>
-          <p className="text-sm text-slate-600">{label}</p>
+          <p className="text-2xl font-bold text-[#02121a]">{value}</p>
+          <p className="text-sm text-[#006073]">{label}</p>
         </div>
       </div>
     </div>
@@ -680,7 +680,7 @@ function PipelineColumn({
     <div className="flex-shrink-0 w-72">
       <div className={cn("rounded-t-lg px-3 py-2 flex items-center gap-2", stage.color)}>
         {stage.icon}
-        <span className="font-medium text-slate-800">{stage.label}</span>
+        <span className="font-medium text-[#02121a]">{stage.label}</span>
         <span className="ml-auto bg-white/60 px-2 py-0.5 rounded text-sm font-medium">
           {podcasts.length}
         </span>
@@ -690,14 +690,14 @@ function PipelineColumn({
         onDragLeave={onDragLeave}
         onDrop={onDrop}
         className={cn(
-          "bg-slate-50 border border-t-0 border-slate-200 rounded-b-lg p-2 min-h-[400px] space-y-2 transition-colors",
-          isDragOver && "bg-blue-50 border-blue-300 border-2 border-dashed"
+          "bg-[#f5edd8] border border-t-0 border-[#94d2bd] rounded-b-lg p-2 min-h-[400px] space-y-2 transition-colors",
+          isDragOver && "bg-[#94d2bd]/30 border-[#0a9396] border-2 border-dashed"
         )}
       >
         {podcasts.length === 0 ? (
           <p className={cn(
             "text-center text-sm py-8",
-            isDragOver ? "text-blue-500" : "text-slate-500"
+            isDragOver ? "text-[#0a9396]" : "text-[#006073]"
           )}>
             {isDragOver ? "Drop here" : "No podcasts"}
           </p>
@@ -747,20 +747,20 @@ function PipelineCard({
       onDragEnd={onDragEnd}
       onClick={onClick}
       className={cn(
-        "bg-white border border-slate-200 rounded-lg p-3 hover:border-blue-300 hover:shadow-sm transition-all cursor-grab active:cursor-grabbing",
-        isDragging && "opacity-50 shadow-lg ring-2 ring-blue-400"
+        "bg-white border border-[#94d2bd] rounded-lg p-3 hover:border-[#0a9396] hover:shadow-sm transition-all cursor-grab active:cursor-grabbing",
+        isDragging && "opacity-50 shadow-lg ring-2 ring-[#0a9396]"
       )}
     >
       <div className="flex items-start justify-between gap-2 mb-2">
-        <h4 className="font-medium text-slate-900 text-sm line-clamp-1">{podcast.showName}</h4>
+        <h4 className="font-medium text-[#02121a] text-sm line-clamp-1">{podcast.showName}</h4>
         <span
           className={cn(
             "text-xs px-1.5 py-0.5 rounded font-medium",
             podcast.tier === "TIER_1"
-              ? "bg-green-100 text-green-700"
+              ? "bg-[#94d2bd] text-[#02121a]"
               : podcast.tier === "TIER_2"
-              ? "bg-blue-100 text-blue-700"
-              : "bg-slate-100 text-slate-600"
+              ? "bg-[#0a9396]/20 text-[#006073]"
+              : "bg-[#ead7a5] text-[#02121a]"
           )}
         >
           {podcast.tier?.replace("_", " ")}
@@ -768,19 +768,19 @@ function PipelineCard({
       </div>
 
       {podcast.hostName && (
-        <p className="text-xs text-slate-600 mb-2 flex items-center gap-1">
+        <p className="text-xs text-[#006073] mb-2 flex items-center gap-1">
           <User className="h-3 w-3" />
           {podcast.hostName}
         </p>
       )}
 
-      <div className="flex items-center gap-2 text-xs text-slate-600">
+      <div className="flex items-center gap-2 text-xs text-[#006073]">
         <Mail className="h-3 w-3" />
         <span>{sentCount} email{sentCount !== 1 ? "s" : ""} sent</span>
       </div>
 
       {podcast.nextFollowUpAt && (
-        <div className="mt-2 flex items-center gap-1 text-xs text-orange-600">
+        <div className="mt-2 flex items-center gap-1 text-xs text-[#cb6701]">
           <Calendar className="h-3 w-3" />
           Follow-up: {new Date(podcast.nextFollowUpAt).toLocaleDateString()}
         </div>
@@ -809,13 +809,13 @@ function OutreachTableRow({
   return (
     <tr
       onClick={onClick}
-      className="hover:bg-slate-50 cursor-pointer transition-colors"
+      className="hover:bg-[#ead7a5] cursor-pointer transition-colors"
     >
       <td className="px-4 py-3">
         <div>
-          <p className="font-medium text-slate-900">{podcast.showName}</p>
+          <p className="font-medium text-[#02121a]">{podcast.showName}</p>
           {podcast.hostName && (
-            <p className="text-sm text-slate-600">{podcast.hostName}</p>
+            <p className="text-sm text-[#006073]">{podcast.hostName}</p>
           )}
         </div>
       </td>
@@ -825,22 +825,22 @@ function OutreachTableRow({
           {stage?.label}
         </span>
       </td>
-      <td className="px-4 py-3 text-slate-700">{sentCount}</td>
+      <td className="px-4 py-3 text-[#02121a]">{sentCount}</td>
       <td className="px-4 py-3">
         {podcast.responseType ? (
           <ResponseBadge type={podcast.responseType} />
         ) : (
-          <span className="text-slate-500">-</span>
+          <span className="text-[#006073]">-</span>
         )}
       </td>
-      <td className="px-4 py-3 text-sm text-slate-600">
+      <td className="px-4 py-3 text-sm text-[#006073]">
         {podcast.lastContactedAt
           ? new Date(podcast.lastContactedAt).toLocaleDateString()
           : "-"}
       </td>
-      <td className="px-4 py-3 text-sm text-slate-600">
+      <td className="px-4 py-3 text-sm text-[#006073]">
         {podcast.nextFollowUpAt ? (
-          <span className="text-orange-600">
+          <span className="text-[#cb6701]">
             Follow-up {new Date(podcast.nextFollowUpAt).toLocaleDateString()}
           </span>
         ) : (
@@ -848,8 +848,8 @@ function OutreachTableRow({
         )}
       </td>
       <td className="px-4 py-3">
-        <button className="p-1 hover:bg-slate-100 rounded">
-          <ChevronRight className="h-4 w-4 text-slate-400" />
+        <button className="p-1 hover:bg-[#ead7a5] rounded">
+          <ChevronRight className="h-4 w-4 text-[#006073]" />
         </button>
       </td>
     </tr>
@@ -933,29 +933,29 @@ function PodcastOutreachDetail({
   };
 
   return (
-    <div className="fixed inset-y-0 right-0 w-1/2 bg-white border-l border-slate-200 shadow-xl z-50 flex flex-col">
+    <div className="fixed inset-y-0 right-0 w-1/2 bg-white border-l border-[#94d2bd] shadow-xl z-50 flex flex-col">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-slate-200 flex items-start justify-between">
+      <div className="px-6 py-4 border-b border-[#94d2bd] flex items-start justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-slate-900">{podcast.showName}</h2>
+          <h2 className="text-lg font-semibold text-[#02121a]">{podcast.showName}</h2>
           {podcast.hostName && (
-            <p className="text-sm text-slate-600">Host: {podcast.hostName}</p>
+            <p className="text-sm text-[#006073]">Host: {podcast.hostName}</p>
           )}
-          <p className="text-sm text-slate-600 mt-1">
+          <p className="text-sm text-[#006073] mt-1">
             {podcast.primaryEmail || "No email"}
           </p>
         </div>
         <button
           onClick={onClose}
-          className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+          className="p-2 hover:bg-[#ead7a5] rounded-lg transition-colors"
         >
-          <XCircle className="h-5 w-5 text-slate-500" />
+          <XCircle className="h-5 w-5 text-[#006073]" />
         </button>
       </div>
 
       {/* Response Branch Selector */}
-      <div className="px-6 py-4 border-b border-slate-200">
-        <h3 className="text-sm font-medium text-slate-700 mb-3">Response Status</h3>
+      <div className="px-6 py-4 border-b border-[#94d2bd]">
+        <h3 className="text-sm font-medium text-[#02121a] mb-3">Response Status</h3>
         <div className="grid grid-cols-2 gap-2">
           {RESPONSE_BRANCHES.map((branch) => (
             <button
@@ -964,45 +964,45 @@ function PodcastOutreachDetail({
               className={cn(
                 "p-3 rounded-lg border text-left transition-all",
                 selectedResponse === branch.id
-                  ? "border-blue-500 bg-blue-50"
-                  : "border-slate-200 hover:border-slate-300"
+                  ? "border-[#0a9396] bg-[#94d2bd]/20"
+                  : "border-[#94d2bd] hover:border-[#0a9396]"
               )}
             >
               <p className={cn("font-medium text-sm", branch.color)}>{branch.label}</p>
-              <p className="text-xs text-slate-600 mt-0.5">{branch.description}</p>
+              <p className="text-xs text-[#006073] mt-0.5">{branch.description}</p>
             </button>
           ))}
         </div>
       </div>
 
       {/* Section Header */}
-      <div className="border-b border-slate-200 px-6 py-3">
-        <h3 className="text-sm font-medium text-slate-900">Email Sequence</h3>
+      <div className="border-b border-[#94d2bd] px-6 py-3">
+        <h3 className="text-sm font-medium text-[#02121a]">Email Sequence</h3>
       </div>
 
       {/* View Email Modal */}
       {viewingEmail && (
-        <div className="absolute inset-0 bg-black/50 z-10 flex items-center justify-center p-6">
+        <div className="absolute inset-0 bg-[#02121a]/50 z-10 flex items-center justify-center p-6">
           <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
-              <h3 className="font-semibold text-slate-900">Email Details</h3>
-              <button onClick={() => setViewingEmail(null)} className="p-1 hover:bg-slate-100 rounded">
-                <XCircle className="h-5 w-5 text-slate-500" />
+            <div className="px-6 py-4 border-b border-[#94d2bd] flex items-center justify-between">
+              <h3 className="font-semibold text-[#02121a]">Email Details</h3>
+              <button onClick={() => setViewingEmail(null)} className="p-1 hover:bg-[#ead7a5] rounded">
+                <XCircle className="h-5 w-5 text-[#006073]" />
               </button>
             </div>
             <div className="p-6 space-y-4">
               <div>
-                <p className="text-sm text-slate-500">Subject</p>
-                <p className="font-medium text-slate-900">{viewingEmail.subject}</p>
+                <p className="text-sm text-[#006073]">Subject</p>
+                <p className="font-medium text-[#02121a]">{viewingEmail.subject}</p>
               </div>
               <div>
-                <p className="text-sm text-slate-500">Body</p>
-                <p className="text-slate-700 whitespace-pre-wrap">{viewingEmail.body}</p>
+                <p className="text-sm text-[#006073]">Body</p>
+                <p className="text-[#02121a] whitespace-pre-wrap">{viewingEmail.body}</p>
               </div>
               {viewingEmail.sentAt && (
                 <div>
-                  <p className="text-sm text-slate-500">Sent</p>
-                  <p className="text-slate-700">{new Date(viewingEmail.sentAt).toLocaleString()}</p>
+                  <p className="text-sm text-[#006073]">Sent</p>
+                  <p className="text-[#02121a]">{new Date(viewingEmail.sentAt).toLocaleString()}</p>
                 </div>
               )}
             </div>

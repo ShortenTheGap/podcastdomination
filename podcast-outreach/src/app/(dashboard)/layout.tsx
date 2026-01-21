@@ -28,12 +28,12 @@ export default function DashboardLayout({
   const pathname = usePathname();
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[#f5edd8]">
       {/* Sidebar */}
-      <aside className="fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200">
-        <div className="flex h-16 items-center gap-2 px-6 border-b border-gray-200">
-          <Mic2 className="h-8 w-8 text-slate-900" />
-          <span className="font-semibold text-lg text-slate-900">Podcast Outreach</span>
+      <aside className="fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-[#94d2bd]">
+        <div className="flex h-16 items-center gap-2 px-6 border-b border-[#94d2bd]">
+          <Mic2 className="h-8 w-8 text-[#006073]" />
+          <span className="font-semibold text-lg text-[#02121a]">Podcast Outreach</span>
         </div>
         <nav className="flex flex-col gap-1 p-4">
           {navigation.map((item) => {
@@ -47,8 +47,8 @@ export default function DashboardLayout({
                 className={cn(
                   "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                   isActive
-                    ? "bg-gray-100 text-gray-900"
-                    : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                    ? "bg-[#ead7a5] text-[#02121a]"
+                    : "text-[#006073] hover:bg-[#ead7a5] hover:text-[#02121a]"
                 )}
               >
                 <item.icon className="h-5 w-5" />

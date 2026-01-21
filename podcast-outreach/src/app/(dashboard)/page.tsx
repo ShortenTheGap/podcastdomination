@@ -22,31 +22,31 @@ const STATUS_GROUPS = [
     id: "new",
     label: "New",
     statuses: ["NOT_CONTACTED"],
-    color: "bg-slate-500",
+    color: "bg-[#ead7a5]",
   },
   {
     id: "ready",
     label: "Ready to Send",
     statuses: ["READY", "READY_TO_DRAFT", "DRAFTED", "QA_APPROVED"],
-    color: "bg-green-500",
+    color: "bg-[#0a9396]",
   },
   {
     id: "sent",
     label: "Sent",
     statuses: ["SENT", "FOLLOW_UP_DUE", "FOLLOW_UP_SENT"],
-    color: "bg-purple-500",
+    color: "bg-[#006073]",
   },
   {
     id: "replied",
     label: "Replied",
     statuses: ["REPLIED"],
-    color: "bg-emerald-500",
+    color: "bg-[#94d2bd]",
   },
   {
     id: "skipped",
     label: "Skipped",
     statuses: ["SKIPPED", "CLOSED"],
-    color: "bg-red-500",
+    color: "bg-[#9d2227]",
   },
 ];
 
@@ -69,24 +69,24 @@ export default function PipelinePage() {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="border-b border-slate-200 px-6 py-4 flex items-center justify-between bg-white">
+      <div className="border-b border-[#94d2bd] px-6 py-4 flex items-center justify-between bg-white">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Pipeline</h1>
-          <p className="text-sm text-slate-500">
+          <h1 className="text-2xl font-semibold text-[#02121a]">Pipeline</h1>
+          <p className="text-sm text-[#006073]">
             {data?.total || 0} podcasts
           </p>
         </div>
 
         <div className="flex items-center gap-3">
           {/* View Toggle */}
-          <div className="flex border border-slate-300 rounded-lg overflow-hidden">
+          <div className="flex border border-[#94d2bd] rounded-lg overflow-hidden">
             <button
               onClick={() => setViewMode("table")}
               className={cn(
                 "px-3 py-1.5 text-sm",
                 viewMode === "table"
-                  ? "bg-slate-900 text-white"
-                  : "bg-white text-slate-700 hover:bg-slate-50"
+                  ? "bg-[#006073] text-white"
+                  : "bg-white text-[#006073] hover:bg-[#ead7a5]"
               )}
             >
               List
@@ -96,8 +96,8 @@ export default function PipelinePage() {
               className={cn(
                 "px-3 py-1.5 text-sm",
                 viewMode === "kanban"
-                  ? "bg-slate-900 text-white"
-                  : "bg-white text-slate-700 hover:bg-slate-50"
+                  ? "bg-[#006073] text-white"
+                  : "bg-white text-[#006073] hover:bg-[#ead7a5]"
               )}
             >
               Board
@@ -113,7 +113,7 @@ export default function PipelinePage() {
       <div className="flex-1 overflow-auto">
         {isLoading ? (
           <div className="flex items-center justify-center h-64">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#0a9396]" />
           </div>
         ) : viewMode === "table" ? (
           <PipelineTable podcasts={data?.podcasts || []} />
@@ -129,8 +129,8 @@ function PipelineTable({ podcasts }: { podcasts: any[] }) {
   if (podcasts.length === 0) {
     return (
       <div className="text-center py-12">
-        <p className="text-slate-500">No podcasts in pipeline</p>
-        <p className="text-sm text-slate-400 mt-1">
+        <p className="text-[#006073]">No podcasts in pipeline</p>
+        <p className="text-sm text-[#0a9396] mt-1">
           Add podcasts from the Discovery tab
         </p>
       </div>
@@ -139,21 +139,21 @@ function PipelineTable({ podcasts }: { podcasts: any[] }) {
 
   return (
     <table className="w-full">
-      <thead className="bg-slate-50 sticky top-0">
+      <thead className="bg-[#ead7a5] sticky top-0">
         <tr>
-          <th className="text-left px-4 py-3 text-sm font-medium text-slate-700">
+          <th className="text-left px-4 py-3 text-sm font-medium text-[#02121a]">
             Podcast
           </th>
-          <th className="text-left px-4 py-3 text-sm font-medium text-slate-700">
+          <th className="text-left px-4 py-3 text-sm font-medium text-[#02121a]">
             Status
           </th>
-          <th className="text-left px-4 py-3 text-sm font-medium text-slate-700">
+          <th className="text-left px-4 py-3 text-sm font-medium text-[#02121a]">
             Contact
           </th>
           <th className="w-12"></th>
         </tr>
       </thead>
-      <tbody className="divide-y divide-slate-200">
+      <tbody className="divide-y divide-[#94d2bd]">
         {podcasts.map((podcast) => (
           <PodcastRow key={podcast.id} podcast={podcast} />
         ))}
@@ -206,13 +206,13 @@ function PodcastRow({ podcast }: { podcast: any }) {
 
   return (
     <tr
-      className="hover:bg-slate-50 cursor-pointer"
+      className="hover:bg-[#ead7a5] cursor-pointer"
       onClick={handleRowClick}
     >
       <td className="px-4 py-3">
         <div>
-          <p className="font-medium text-slate-900">{podcast.showName}</p>
-          <p className="text-sm text-slate-500">
+          <p className="font-medium text-[#02121a]">{podcast.showName}</p>
+          <p className="text-sm text-[#006073]">
             {podcast.hostName || "Unknown host"}
           </p>
         </div>
@@ -221,7 +221,7 @@ function PodcastRow({ podcast }: { podcast: any }) {
         <StatusBadge status={podcast.status} />
       </td>
       <td className="px-4 py-3">
-        <p className="text-sm text-slate-600 truncate max-w-[200px]">
+        <p className="text-sm text-[#006073] truncate max-w-[200px]">
           {podcast.primaryEmail || "No email"}
         </p>
       </td>
@@ -229,9 +229,9 @@ function PodcastRow({ podcast }: { podcast: any }) {
         <button
           ref={buttonRef}
           onClick={handleMenuOpen}
-          className="p-1 hover:bg-slate-200 rounded"
+          className="p-1 hover:bg-[#ead7a5] rounded"
         >
-          <MoreHorizontal className="h-4 w-4 text-slate-500" />
+          <MoreHorizontal className="h-4 w-4 text-[#006073]" />
         </button>
 
         {menuOpen && (
@@ -241,19 +241,19 @@ function PodcastRow({ podcast }: { podcast: any }) {
               onClick={() => setMenuOpen(false)}
             />
             <div
-              className="fixed w-40 bg-white border border-slate-200 rounded-lg shadow-lg z-50 py-1"
+              className="fixed w-40 bg-white border border-[#94d2bd] rounded-lg shadow-lg z-50 py-1"
               style={{ top: menuPosition.top, left: menuPosition.left }}
             >
               <a
                 href={podcast.primaryPlatformUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
+                className="block px-4 py-2 text-sm text-[#02121a] hover:bg-[#ead7a5]"
                 onClick={() => setMenuOpen(false)}
               >
                 View Podcast
               </a>
-              <hr className="my-1 border-slate-200" />
+              <hr className="my-1 border-[#94d2bd]" />
               <button
                 onClick={() => {
                   if (confirm("Remove this podcast from your pipeline?")) {
@@ -261,7 +261,7 @@ function PodcastRow({ podcast }: { podcast: any }) {
                   }
                   setMenuOpen(false);
                 }}
-                className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                className="block w-full text-left px-4 py-2 text-sm text-[#9d2227] hover:bg-[#ead7a5]"
               >
                 Remove
               </button>
@@ -277,52 +277,52 @@ function StatusBadge({ status }: { status: string }) {
   const config: Record<string, { label: string; color: string; icon: any }> = {
     NOT_CONTACTED: {
       label: "New",
-      color: "bg-slate-100 text-slate-700",
+      color: "bg-[#ead7a5] text-[#02121a]",
       icon: Sparkles,
     },
     READY: {
       label: "Ready",
-      color: "bg-green-100 text-green-700",
+      color: "bg-[#94d2bd] text-[#02121a]",
       icon: CheckCircle,
     },
     READY_TO_DRAFT: {
       label: "Ready",
-      color: "bg-green-100 text-green-700",
+      color: "bg-[#94d2bd] text-[#02121a]",
       icon: CheckCircle,
     },
     DRAFTED: {
       label: "Ready",
-      color: "bg-green-100 text-green-700",
+      color: "bg-[#94d2bd] text-[#02121a]",
       icon: CheckCircle,
     },
     QA_APPROVED: {
       label: "Ready",
-      color: "bg-green-100 text-green-700",
+      color: "bg-[#94d2bd] text-[#02121a]",
       icon: CheckCircle,
     },
     SKIPPED: {
       label: "Skipped",
-      color: "bg-red-100 text-red-700",
+      color: "bg-[#b02013] text-white",
       icon: X,
     },
     SENT: {
       label: "Sent",
-      color: "bg-purple-100 text-purple-700",
+      color: "bg-[#0a9396] text-white",
       icon: Send,
     },
     FOLLOW_UP_DUE: {
       label: "Follow-up Due",
-      color: "bg-amber-100 text-amber-700",
+      color: "bg-[#ed9b05] text-[#02121a]",
       icon: Clock,
     },
     REPLIED: {
       label: "Replied",
-      color: "bg-emerald-100 text-emerald-700",
+      color: "bg-[#94d2bd] text-[#02121a]",
       icon: MessageSquare,
     },
     CLOSED: {
       label: "Closed",
-      color: "bg-slate-100 text-slate-700",
+      color: "bg-[#006073] text-white",
       icon: CheckCircle,
     },
   };
@@ -366,7 +366,7 @@ function FilterDropdown({
     <div className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 px-3 py-1.5 border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-700"
+        className="flex items-center gap-2 px-3 py-1.5 border border-[#94d2bd] rounded-lg hover:bg-[#ead7a5] text-[#02121a]"
       >
         <Filter className="h-4 w-4" />
         <span className="text-sm">{selectedLabel}</span>
@@ -376,7 +376,7 @@ function FilterDropdown({
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-slate-200 rounded-lg shadow-lg py-1 z-20">
+          <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-[#94d2bd] rounded-lg shadow-lg py-1 z-20">
             {options.map((option) => (
               <button
                 key={option.value}
@@ -385,10 +385,10 @@ function FilterDropdown({
                   setOpen(false);
                 }}
                 className={cn(
-                  "block w-full text-left px-4 py-2 text-sm hover:bg-slate-100",
+                  "block w-full text-left px-4 py-2 text-sm hover:bg-[#ead7a5]",
                   value === option.value
-                    ? "text-blue-600 font-medium"
-                    : "text-slate-700"
+                    ? "text-[#0a9396] font-medium"
+                    : "text-[#02121a]"
                 )}
               >
                 {option.label}
@@ -414,12 +414,12 @@ function PipelineBoard({ podcasts }: { podcasts: any[] }) {
         return (
           <div
             key={group.id}
-            className="flex-shrink-0 w-72 bg-slate-100 rounded-lg flex flex-col"
+            className="flex-shrink-0 w-72 bg-[#ead7a5] rounded-lg flex flex-col"
           >
-            <div className="p-3 border-b border-slate-200 flex items-center gap-2">
+            <div className="p-3 border-b border-[#94d2bd] flex items-center gap-2">
               <div className={cn("w-2 h-2 rounded-full", group.color)} />
-              <span className="font-medium text-slate-900">{group.label}</span>
-              <span className="text-slate-500 text-sm ml-auto">
+              <span className="font-medium text-[#02121a]">{group.label}</span>
+              <span className="text-[#006073] text-sm ml-auto">
                 {groupPodcasts.length}
               </span>
             </div>
@@ -428,18 +428,18 @@ function PipelineBoard({ podcasts }: { podcasts: any[] }) {
                 <div
                   key={podcast.id}
                   onClick={() => router.push(`/podcast/${podcast.id}`)}
-                  className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+                  className="bg-white p-3 rounded-lg border border-[#94d2bd] shadow-sm hover:shadow-md transition-shadow cursor-pointer"
                 >
-                  <p className="font-medium text-slate-900 truncate">
+                  <p className="font-medium text-[#02121a] truncate">
                     {podcast.showName}
                   </p>
-                  <p className="text-sm text-slate-500 truncate">
+                  <p className="text-sm text-[#006073] truncate">
                     {podcast.hostName || "Unknown host"}
                   </p>
                 </div>
               ))}
               {groupPodcasts.length === 0 && (
-                <div className="text-center py-8 text-slate-400 text-sm">
+                <div className="text-center py-8 text-[#0a9396] text-sm">
                   No podcasts
                 </div>
               )}
