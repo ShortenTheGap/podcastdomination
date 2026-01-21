@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, isPrismaAvailable } from "@/lib/db";
-import { updateDemoCampaign } from "@/lib/demo-campaigns";
+import { updateDemoCampaignAsync } from "@/lib/demo-campaigns";
 
 // Map response type to database fields
 function mapResponseToDbFields(responseType: string) {
@@ -79,7 +79,7 @@ export async function POST(
     }
 
     if (!isPrismaAvailable()) {
-      // Update in-memory storage for demo mode
+      // Update file-persisted storage for demo mode
       const updates: { status?: string; responseType?: string | null } = {};
       if (stage) {
         updates.status = stage;
@@ -99,11 +99,12 @@ export async function POST(
         }
       }
 
-      updateDemoCampaign(id, updates);
+      // Use async update for file persistence
+      await updateDemoCampaignAsync(id, updates);
 
       return NextResponse.json({
         success: true,
-        message: "Updated (demo mode)",
+        message: "Updated and persisted to file",
         stage: stage,
         responseType: responseType,
       });

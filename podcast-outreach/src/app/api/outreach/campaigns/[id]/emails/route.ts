@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, isPrismaAvailable } from "@/lib/db";
+import { getDemoCampaignAsync, updateDemoCampaignAsync } from "@/lib/demo-campaigns";
 
 // Map email type to touch type
 function mapEmailTypeToTouchType(emailType: string) {
@@ -26,6 +27,11 @@ export async function GET(
     const { id } = await params;
 
     if (!isPrismaAvailable()) {
+      // Return emails from file-persisted demo campaign
+      const campaign = await getDemoCampaignAsync(id);
+      if (campaign) {
+        return NextResponse.json({ emails: campaign.emailSequence || [] });
+      }
       return NextResponse.json({ emails: [] });
     }
 
@@ -96,24 +102,89 @@ export async function GET(
   }
 }
 
+interface EmailInSequence {
+  id: string;
+  type: "initial" | "follow_up_1" | "follow_up_2" | "follow_up_3" | "nurture" | "closing";
+  subject: string;
+  body: string;
+  status: "draft" | "scheduled" | "sent" | "opened" | "replied";
+  sentAt: string | null;
+  scheduledFor: string | null;
+  openedAt: string | null;
+  repliedAt: string | null;
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
-    const { type, subject, body, status, scheduledFor } = await request.json();
+    const { type, subject, body, status, scheduledFor, emailSequence } = await request.json();
+
+    // Handle bulk email sequence update
+    if (emailSequence && Array.isArray(emailSequence)) {
+      if (!isPrismaAvailable()) {
+        // Update the entire email sequence in file storage
+        await updateDemoCampaignAsync(id, { emailSequence });
+        return NextResponse.json({
+          success: true,
+          message: "Email sequence saved to persistent storage",
+        });
+      }
+    }
 
     if (!subject || !body) {
       return NextResponse.json({ error: "Subject and body required" }, { status: 400 });
     }
 
     if (!isPrismaAvailable()) {
-      return NextResponse.json({
-        success: true,
-        message: "Email saved (demo mode)",
-        email: { id: `demo-${Date.now()}`, type, subject, body, status },
-      });
+      // Update email in file-persisted demo campaign
+      const campaign = await getDemoCampaignAsync(id);
+      if (campaign) {
+        const existingSequence = campaign.emailSequence || [];
+        const emailIndex = existingSequence.findIndex(e => e.type === type);
+
+        const newEmail: EmailInSequence = {
+          id: `email-${type}-${Date.now()}`,
+          type: type as EmailInSequence["type"],
+          subject,
+          body,
+          status: status || "draft",
+          sentAt: status === "sent" ? new Date().toISOString() : null,
+          scheduledFor: scheduledFor || null,
+          openedAt: null,
+          repliedAt: null,
+        };
+
+        let updatedSequence: EmailInSequence[];
+        if (emailIndex >= 0) {
+          updatedSequence = [...existingSequence];
+          updatedSequence[emailIndex] = { ...existingSequence[emailIndex], ...newEmail, id: existingSequence[emailIndex].id };
+        } else {
+          updatedSequence = [...existingSequence, newEmail];
+        }
+
+        const updates: { emailSequence: EmailInSequence[]; status?: string; lastContactedAt?: string } = {
+          emailSequence: updatedSequence,
+        };
+
+        // Update campaign status if email was sent
+        if (status === "sent") {
+          updates.status = "sent_awaiting";
+          updates.lastContactedAt = new Date().toISOString();
+        }
+
+        await updateDemoCampaignAsync(id, updates);
+
+        return NextResponse.json({
+          success: true,
+          message: "Email saved to persistent storage",
+          email: newEmail,
+        });
+      }
+
+      return NextResponse.json({ error: "Campaign not found" }, { status: 404 });
     }
 
     // For initial emails, update the draft on the podcast

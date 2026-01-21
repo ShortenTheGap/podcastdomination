@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, isPrismaAvailable } from "@/lib/db";
-import { getDemoCampaigns, updateDemoCampaign, DemoCampaign } from "@/lib/demo-campaigns";
+import {
+  getDemoCampaignsAsync,
+  updateDemoCampaignAsync,
+  syncDemoCampaigns,
+  DemoCampaign,
+} from "@/lib/demo-campaigns";
 
 // Re-export for backwards compatibility
-export { getDemoCampaigns as getInMemoryCampaigns, updateDemoCampaign as updateInMemoryCampaign };
+export { getDemoCampaignsAsync as getInMemoryCampaigns, updateDemoCampaignAsync as updateInMemoryCampaign };
 
 // Types for outreach campaigns
 interface EmailInSequence {
@@ -87,8 +92,9 @@ function mapReplyTypeToResponse(replyType: string | null, outcome: string): stri
 export async function GET() {
   try {
     if (!isPrismaAvailable()) {
-      // Return in-memory data for demo
-      return NextResponse.json({ campaigns: getDemoCampaigns() });
+      // Return file-persisted data for demo
+      const campaigns = await getDemoCampaignsAsync();
+      return NextResponse.json({ campaigns });
     }
 
     // Fetch from database
@@ -190,14 +196,25 @@ export async function GET() {
     return NextResponse.json({ campaigns });
   } catch (error) {
     console.error("Error fetching campaigns:", error);
-    return NextResponse.json({ campaigns: getDemoCampaigns() });
+    // Fall back to file-persisted demo data
+    const campaigns = await getDemoCampaignsAsync();
+    return NextResponse.json({ campaigns });
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { podcastId, action } = body;
+    const { podcastId, action, campaigns } = body;
+
+    // Handle bulk sync action
+    if (action === "sync" && campaigns) {
+      await syncDemoCampaigns(campaigns as DemoCampaign[]);
+      return NextResponse.json({
+        success: true,
+        message: `Synced ${campaigns.length} campaigns`,
+      });
+    }
 
     if (!isPrismaAvailable()) {
       // Handle in-memory
@@ -222,5 +239,27 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Error updating campaign:", error);
     return NextResponse.json({ error: "Failed to update" }, { status: 500 });
+  }
+}
+
+// PUT endpoint for syncing full campaign data
+export async function PUT(request: NextRequest) {
+  try {
+    const { campaigns } = await request.json();
+
+    if (!campaigns || !Array.isArray(campaigns)) {
+      return NextResponse.json({ error: "Campaigns array required" }, { status: 400 });
+    }
+
+    // Sync all campaigns to file storage
+    await syncDemoCampaigns(campaigns as DemoCampaign[]);
+
+    return NextResponse.json({
+      success: true,
+      message: `Synced ${campaigns.length} campaigns to persistent storage`,
+    });
+  } catch (error) {
+    console.error("Error syncing campaigns:", error);
+    return NextResponse.json({ error: "Failed to sync campaigns" }, { status: 500 });
   }
 }

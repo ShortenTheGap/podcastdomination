@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Mail,
@@ -20,6 +20,7 @@ import {
   AlertCircle,
   Sparkles,
   Wand2,
+  Save,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -83,42 +84,23 @@ const RESPONSE_BRANCHES = [
   { id: "opted_out", label: "Opted Out", description: "Do not contact", color: "text-slate-600", bgColor: "bg-slate-100" },
 ];
 
-// localStorage key for persisting campaign changes
-const CAMPAIGNS_STORAGE_KEY = "outreach-campaigns-local";
-const CAMPAIGNS_VERSION_KEY = "outreach-campaigns-version";
-
-// Helper to save campaigns to localStorage with version
-function saveCampaignsToStorage(campaigns: OutreachPodcast[]) {
-  if (typeof window !== "undefined") {
-    localStorage.setItem(CAMPAIGNS_STORAGE_KEY, JSON.stringify(campaigns));
-    localStorage.setItem(CAMPAIGNS_VERSION_KEY, Date.now().toString());
-  }
-}
-
-// Helper to load campaigns from localStorage
-function loadCampaignsFromStorage(): OutreachPodcast[] | null {
-  if (typeof window !== "undefined") {
-    const stored = localStorage.getItem(CAMPAIGNS_STORAGE_KEY);
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored);
-        // Validate that parsed data is an array
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
-        }
-      } catch {
-        return null;
-      }
+// Sync campaigns to server (persistent storage)
+async function syncCampaignsToServer(campaigns: OutreachPodcast[]): Promise<boolean> {
+  try {
+    const res = await fetch("/api/outreach/campaigns", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ campaigns }),
+    });
+    if (!res.ok) {
+      console.error("Failed to sync campaigns to server");
+      return false;
     }
-  }
-  return null;
-}
-
-// Helper to clear localStorage campaigns (for debugging/reset)
-function clearCampaignsStorage() {
-  if (typeof window !== "undefined") {
-    localStorage.removeItem(CAMPAIGNS_STORAGE_KEY);
-    localStorage.removeItem(CAMPAIGNS_VERSION_KEY);
+    console.log("[Sync] Campaigns synced to server successfully");
+    return true;
+  } catch (error) {
+    console.error("Error syncing campaigns:", error);
+    return false;
   }
 }
 
@@ -128,76 +110,97 @@ export default function OutreachPage() {
   const [filterStage, setFilterStage] = useState<OutreachStage | "all">("all");
   const [draggedPodcast, setDraggedPodcast] = useState<OutreachPodcast | null>(null);
   const [dragOverStage, setDragOverStage] = useState<OutreachStage | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
 
-  // Local state for campaigns - this is the source of truth for the UI
-  // Initialize from localStorage synchronously to avoid flash of wrong data
-  const [localCampaigns, setLocalCampaigns] = useState<OutreachPodcast[]>(() => {
-    // Only run on client (SSR safety)
-    if (typeof window === "undefined") return [];
-    const stored = loadCampaignsFromStorage();
-    return stored || [];
-  });
+  // Local state for campaigns - server is the source of truth
+  const [localCampaigns, setLocalCampaigns] = useState<OutreachPodcast[]>([]);
+  const [hasUnsyncedChanges, setHasUnsyncedChanges] = useState(false);
 
-  // Track initialization state explicitly to prevent API data from overwriting localStorage
-  const [initState, setInitState] = useState<'pending' | 'from_storage' | 'from_api'>(() => {
-    if (typeof window === "undefined") return 'pending';
-    const stored = loadCampaignsFromStorage();
-    return stored && stored.length > 0 ? 'from_storage' : 'pending';
-  });
+  // Debounce timer for auto-sync
+  const syncTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const queryClient = useQueryClient();
 
-  // Fetch outreach data
-  const { data: outreachData, isLoading } = useQuery({
+  // Fetch outreach data from server (source of truth)
+  const { data: outreachData, isLoading, refetch } = useQuery({
     queryKey: ["outreach-campaigns"],
     queryFn: async () => {
       const res = await fetch("/api/outreach/campaigns");
       if (!res.ok) throw new Error("Failed to fetch");
       return res.json();
     },
-    staleTime: Infinity,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
+    staleTime: 0, // Always fetch fresh data
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
 
-  // Initialize campaigns: first check localStorage, then fall back to API data
-  // Only use API data if localStorage was empty on initial load
+  // Initialize campaigns from server data
   useEffect(() => {
-    // If we already loaded from storage, never overwrite with API data
-    if (initState === 'from_storage') return;
-
-    // If we already loaded from API, don't run again
-    if (initState === 'from_api') return;
-
-    // Double-check localStorage in case it was populated after initial render
-    const stored = loadCampaignsFromStorage();
-    if (stored && stored.length > 0) {
-      setLocalCampaigns(stored);
-      setInitState('from_storage');
-      return;
-    }
-
-    // Only fall back to API data if localStorage is empty
     if (outreachData?.campaigns && outreachData.campaigns.length > 0) {
       setLocalCampaigns(outreachData.campaigns);
-      saveCampaignsToStorage(outreachData.campaigns);
-      setInitState('from_api');
+      setLastSyncTime(new Date());
     }
-  }, [outreachData, initState]);
+  }, [outreachData]);
 
-  // Helper to update campaigns and persist to localStorage
-  const updateLocalCampaigns = (updater: (prev: OutreachPodcast[]) => OutreachPodcast[]) => {
+  // Auto-sync function with debouncing
+  const scheduleSync = useCallback((campaigns: OutreachPodcast[]) => {
+    // Clear any existing timer
+    if (syncTimerRef.current) {
+      clearTimeout(syncTimerRef.current);
+    }
+
+    // Set flag for unsaved changes
+    setHasUnsyncedChanges(true);
+
+    // Schedule sync after 1 second of inactivity
+    syncTimerRef.current = setTimeout(async () => {
+      setIsSyncing(true);
+      const success = await syncCampaignsToServer(campaigns);
+      setIsSyncing(false);
+      if (success) {
+        setHasUnsyncedChanges(false);
+        setLastSyncTime(new Date());
+      }
+    }, 1000);
+  }, []);
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (syncTimerRef.current) {
+        clearTimeout(syncTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Force sync before page unload
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsyncedChanges) {
+        // Sync immediately before leaving
+        syncCampaignsToServer(localCampaigns);
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsyncedChanges, localCampaigns]);
+
+  // Helper to update campaigns and sync to server
+  const updateLocalCampaigns = useCallback((updater: (prev: OutreachPodcast[]) => OutreachPodcast[]) => {
     setLocalCampaigns(prev => {
       const updated = updater(prev);
-      saveCampaignsToStorage(updated);
+      // Schedule sync to server
+      scheduleSync(updated);
       return updated;
     });
-    // Mark as from_storage since user has made modifications
-    setInitState('from_storage');
-  };
+  }, [scheduleSync]);
 
-  // Function to update campaign stage locally
-  const updateCampaignStage = (podcastId: string, newStage: OutreachStage) => {
+  // Function to update campaign stage locally and sync
+  const updateCampaignStage = useCallback((podcastId: string, newStage: OutreachStage) => {
     updateLocalCampaigns(prev =>
       prev.map(campaign =>
         campaign.id === podcastId
@@ -206,12 +209,23 @@ export default function OutreachPage() {
       )
     );
 
-    // Also fire API call in background (fire and forget)
+    // Also fire individual API call for immediate persistence
     fetch(`/api/outreach/campaigns/${podcastId}/response`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ stage: newStage }),
-    }).catch(err => console.log("API update failed (demo mode):", err));
+    }).catch(err => console.log("Individual update failed:", err));
+  }, [updateLocalCampaigns]);
+
+  // Manual sync function
+  const handleManualSync = async () => {
+    setIsSyncing(true);
+    const success = await syncCampaignsToServer(localCampaigns);
+    setIsSyncing(false);
+    if (success) {
+      setHasUnsyncedChanges(false);
+      setLastSyncTime(new Date());
+    }
   };
 
   // Drag handlers
@@ -242,7 +256,7 @@ export default function OutreachPage() {
     setDragOverStage(null);
   };
 
-  // Use local campaigns as the source of truth
+  // Use local campaigns as the source of truth for UI
   const podcasts: OutreachPodcast[] = localCampaigns;
 
   // Group podcasts by stage for pipeline view
@@ -271,6 +285,29 @@ export default function OutreachPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          {/* Sync Status */}
+          <div className="flex items-center gap-2 text-sm">
+            {isSyncing ? (
+              <span className="flex items-center gap-1 text-blue-600">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Saving...
+              </span>
+            ) : hasUnsyncedChanges ? (
+              <button
+                onClick={handleManualSync}
+                className="flex items-center gap-1 text-amber-600 hover:text-amber-700"
+              >
+                <Save className="h-4 w-4" />
+                Save changes
+              </button>
+            ) : lastSyncTime ? (
+              <span className="flex items-center gap-1 text-green-600">
+                <CheckCircle className="h-4 w-4" />
+                Saved
+              </span>
+            ) : null}
+          </div>
+
           {/* View Toggle */}
           <div className="flex bg-slate-100 rounded-lg p-1">
             <button
@@ -374,9 +411,12 @@ export default function OutreachPage() {
         <PodcastOutreachDetail
           podcast={selectedPodcast}
           onClose={() => setSelectedPodcast(null)}
-          onUpdate={() => queryClient.invalidateQueries({ queryKey: ["outreach-campaigns"] })}
+          onUpdate={() => {
+            queryClient.invalidateQueries({ queryKey: ["outreach-campaigns"] });
+            refetch();
+          }}
           onUpdateCampaign={(id, updates) => {
-            // Update local campaigns and persist to localStorage
+            // Update local campaigns and sync to server
             updateLocalCampaigns(prev =>
               prev.map(campaign =>
                 campaign.id === id
