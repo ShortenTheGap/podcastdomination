@@ -3,15 +3,17 @@ import { db } from "@/lib/db";
 import { GmailClient } from "@/lib/gmail";
 import { z } from "zod";
 import { SENDING_RULES } from "@/lib/constants";
+import { getGmailTokens } from "@/app/api/auth/gmail/route";
 
-// Create Gmail client from environment credentials
-function getGmailClient() {
-  if (!process.env.GOOGLE_ACCESS_TOKEN || !process.env.GOOGLE_REFRESH_TOKEN) {
-    throw new Error("Gmail credentials not configured");
+// Create Gmail client from stored OAuth tokens
+async function getGmailClient() {
+  const tokens = await getGmailTokens();
+  if (!tokens) {
+    throw new Error("Gmail not connected. Please connect Gmail in Settings first.");
   }
   return new GmailClient({
-    access_token: process.env.GOOGLE_ACCESS_TOKEN,
-    refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
+    access_token: tokens.accessToken,
+    refresh_token: tokens.refreshToken,
   });
 }
 
@@ -116,7 +118,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Send immediately
-    const gmail = getGmailClient();
+    const gmail = await getGmailClient();
     const result = await gmail.sendEmail({
       to: emailToUse,
       subject: podcast.emailSubject,

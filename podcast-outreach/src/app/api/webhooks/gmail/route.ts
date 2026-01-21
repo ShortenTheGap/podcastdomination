@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { GmailClient } from "@/lib/gmail";
+import { getGmailTokens } from "@/app/api/auth/gmail/route";
 
-// Create Gmail client from environment credentials
-function getGmailClient() {
-  if (!process.env.GOOGLE_ACCESS_TOKEN || !process.env.GOOGLE_REFRESH_TOKEN) {
-    throw new Error("Gmail credentials not configured");
+// Create Gmail client from stored OAuth tokens
+async function getGmailClient() {
+  const tokens = await getGmailTokens();
+  if (!tokens) {
+    throw new Error("Gmail not connected. Please connect Gmail in Settings first.");
   }
   return new GmailClient({
-    access_token: process.env.GOOGLE_ACCESS_TOKEN,
-    refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
+    access_token: tokens.accessToken,
+    refresh_token: tokens.refreshToken,
   });
 }
 
@@ -93,7 +95,7 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const gmail = getGmailClient();
+    const gmail = await getGmailClient();
     const thread = await gmail.getThread(threadId);
     const messageCount = thread.messages?.length || 0;
 
