@@ -137,10 +137,32 @@ export default function PodcastDetailPage({ params }: Props) {
       if (!res.ok) throw new Error("Failed to update");
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["podcast", id] });
       setIsEditingContact(false);
       // Keep emailFinderResult visible so user can see found emails and change selection
+
+      // Also sync email to campaigns if this podcast is in an outreach campaign
+      try {
+        const campaignsRes = await fetch("/api/outreach/campaigns");
+        if (campaignsRes.ok) {
+          const { campaigns } = await campaignsRes.json();
+          const campaign = campaigns.find((c: { id: string }) => c.id === id);
+          if (campaign) {
+            // Update the campaign's email to match
+            const updatedCampaigns = campaigns.map((c: { id: string }) =>
+              c.id === id ? { ...c, primaryEmail: contactForm.primaryEmail || null } : c
+            );
+            await fetch("/api/outreach/campaigns", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ campaigns: updatedCampaigns }),
+            });
+          }
+        }
+      } catch (error) {
+        console.error("Failed to sync email to campaigns:", error);
+      }
     },
   });
 

@@ -1037,10 +1037,21 @@ function PodcastOutreachDetail({
     setEditingEmail(null);
   };
 
-  const handleSaveContactEmail = () => {
+  const handleSaveContactEmail = async () => {
     const trimmedEmail = editedContactEmail.trim();
     onUpdateCampaignImmediate(podcast.id, { primaryEmail: trimmedEmail || null });
     setIsEditingContactEmail(false);
+
+    // Also sync to the Podcast database so Pipeline view stays in sync
+    try {
+      await fetch(`/api/podcasts/${podcast.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ primaryEmail: trimmedEmail || null }),
+      });
+    } catch (error) {
+      console.error("Failed to sync email to podcast database:", error);
+    }
   };
 
   const handleCancelContactEmailEdit = () => {
