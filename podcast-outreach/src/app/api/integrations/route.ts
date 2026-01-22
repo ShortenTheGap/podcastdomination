@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { db } from "@/lib/db";
 
 // In-memory storage for user-provided API keys (use database in production)
 interface IntegrationConfig {
@@ -16,6 +17,23 @@ export const integrationSettings: Record<string, IntegrationConfig> = {
   podcastindex: { connected: false, config: {} },
   listennotes: { connected: false, config: {} },
 };
+
+// Check if Gmail OAuth tokens exist in database
+async function hasGmailOAuthTokens(): Promise<boolean> {
+  try {
+    const record = await db.keyValueStore.findUnique({
+      where: { key: "gmail_tokens" },
+    });
+    if (record) {
+      const tokens = JSON.parse(record.value);
+      // Check if tokens exist and haven't been cleared
+      return !!(tokens?.accessToken && tokens?.refreshToken);
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
 
 // Helper to get an API key (checks user-provided first, then env var)
 export function getApiKey(integration: string): string | null {
@@ -38,11 +56,14 @@ export function getApiKey(integration: string): string | null {
 }
 
 export async function GET() {
+  // Check for actual Gmail OAuth tokens in database
+  const gmailHasOAuthTokens = await hasGmailOAuthTokens();
+
   // Check both environment variables and user-provided keys
   const status = {
     gmail: {
       connected: !!process.env.GOOGLE_CLIENT_ID && !!process.env.GOOGLE_CLIENT_SECRET,
-      hasOAuthToken: integrationSettings.gmail.connected,
+      hasOAuthToken: gmailHasOAuthTokens,
       configured: !!process.env.GOOGLE_CLIENT_ID,
     },
     anthropic: {
