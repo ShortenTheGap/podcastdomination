@@ -207,8 +207,16 @@ export default function OutreachPage() {
   useEffect(() => {
     if (selectedPodcast && localCampaigns.length > 0) {
       const updatedCampaign = localCampaigns.find(c => c.id === selectedPodcast.id);
-      if (updatedCampaign && updatedCampaign.primaryEmail !== selectedPodcast.primaryEmail) {
-        setSelectedPodcast(updatedCampaign);
+      if (updatedCampaign) {
+        // Check if any important fields have changed
+        const needsUpdate =
+          updatedCampaign.primaryEmail !== selectedPodcast.primaryEmail ||
+          updatedCampaign.status !== selectedPodcast.status ||
+          updatedCampaign.responseType !== selectedPodcast.responseType;
+
+        if (needsUpdate) {
+          setSelectedPodcast(updatedCampaign);
+        }
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -243,7 +251,7 @@ export default function OutreachPage() {
       return res.json();
     },
     staleTime: 30000, // Keep data fresh for 30 seconds to reduce refetch frequency
-    refetchOnWindowFocus: false, // DISABLED: Prevents overwriting local changes on window focus
+    refetchOnWindowFocus: true, // ENABLED: Triggers email sync when switching tabs (email sync happens before early returns)
     refetchOnReconnect: false, // DISABLED: Prevents overwriting on reconnect
   });
 
@@ -252,6 +260,28 @@ export default function OutreachPage() {
   // CRITICAL: Never overwrite local changes that haven't been synced
   useEffect(() => {
     if (!outreachData?.campaigns) return;
+
+    const serverCampaigns = outreachData.campaigns;
+
+    // CRITICAL: ALWAYS sync emails from server first, BEFORE any early returns
+    // This ensures email changes from Podcast detail page are ALWAYS reflected
+    if (localCampaigns.length > 0 && serverCampaigns.length > 0) {
+      let emailsChanged = false;
+      const emailSyncedCampaigns = localCampaigns.map(localCampaign => {
+        const serverCampaign = serverCampaigns.find((c: OutreachPodcast) => c.id === localCampaign.id);
+        if (serverCampaign && serverCampaign.primaryEmail !== localCampaign.primaryEmail) {
+          console.log(`[EmailSync] ${localCampaign.showName}: "${localCampaign.primaryEmail}" -> "${serverCampaign.primaryEmail}"`);
+          emailsChanged = true;
+          return { ...localCampaign, primaryEmail: serverCampaign.primaryEmail };
+        }
+        return localCampaign;
+      });
+
+      if (emailsChanged) {
+        setLocalCampaigns(emailSyncedCampaigns);
+        saveToLocalStorage(emailSyncedCampaigns);
+      }
+    }
 
     // IMPORTANT: Never overwrite local state if we have unsynced changes
     // This prevents the race condition where server refetch overwrites local edits
@@ -268,8 +298,6 @@ export default function OutreachPage() {
       justSyncedRef.current = false;
       return;
     }
-
-    const serverCampaigns = outreachData.campaigns;
     const localBackup = loadFromLocalStorage();
 
     // If server is empty but we have local backup, restore it
@@ -1122,9 +1150,9 @@ function PodcastOutreachDetail({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ primaryEmail: trimmedEmail || null }),
       });
-      // Invalidate podcast queries so Pipeline and Podcast detail page see the update
-      queryClient.invalidateQueries({ queryKey: ["podcasts"] });
-      queryClient.invalidateQueries({ queryKey: ["podcast", podcast.id] });
+      // Force refetch podcast queries so Pipeline and Podcast detail page see the update immediately
+      await queryClient.refetchQueries({ queryKey: ["podcasts"], type: "active" });
+      await queryClient.refetchQueries({ queryKey: ["podcast", podcast.id], type: "active" });
     } catch (error) {
       console.error("Failed to sync email to podcast database:", error);
     }
