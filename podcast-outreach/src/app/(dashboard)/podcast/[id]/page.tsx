@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -76,6 +76,13 @@ export default function PodcastDetailPage({ params }: Props) {
     },
     staleTime: 0,
   });
+
+  // Load stored email finder result when podcast data is available
+  useEffect(() => {
+    if (podcast?.emailFinderResult && !emailFinderResult) {
+      setEmailFinderResult(podcast.emailFinderResult);
+    }
+  }, [podcast?.emailFinderResult]);
 
   // Analyze & Draft mutation (just for analysis, no drafting)
   const analyzeMutation = useMutation({

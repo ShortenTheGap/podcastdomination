@@ -72,11 +72,27 @@ export async function POST(request: NextRequest) {
       alternateCount: result.alternateEmails?.length || 0,
     });
 
+    // Build the full result object to persist
+    const fullResult = {
+      success: result.email && result.source !== "not_found",
+      email: result.email,
+      source: result.source,
+      sourceUrl: result.sourceUrl,
+      confidence: result.confidence,
+      message: result.message,
+      sourceDetails: result.sourceDetails,
+      alternateEmails: result.alternateEmails,
+      discoveredWebsiteUrl: result.discoveredWebsiteUrl,
+    };
+
     // If we found an email, update the database
     if (result.email && result.source !== "not_found") {
       const updateData: Record<string, unknown> = {
         primaryEmail: result.email,
         primaryEmailSourceUrl: result.sourceUrl || null,
+        // Persist the full email finder result for retroactive access
+        emailFinderResult: fullResult,
+        emailFinderRunAt: new Date(),
       };
 
       // If we discovered a website URL, save it
@@ -96,16 +112,7 @@ export async function POST(request: NextRequest) {
         data: updateData,
       });
 
-      return NextResponse.json({
-        success: true,
-        email: result.email,
-        source: result.source,
-        sourceUrl: result.sourceUrl,
-        confidence: result.confidence,
-        message: result.message,
-        alternateEmails: result.alternateEmails,
-        discoveredWebsiteUrl: result.discoveredWebsiteUrl,
-      });
+      return NextResponse.json(fullResult);
     }
 
     // No email found - provide helpful guidance
