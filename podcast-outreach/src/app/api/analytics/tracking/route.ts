@@ -10,6 +10,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 
+interface TouchRecord {
+  id: string;
+  sentAt: Date | null;
+  opened: boolean;
+  openedAt: Date | null;
+  replied: boolean;
+  repliedAt: Date | null;
+  bounced: boolean;
+  bouncedAt: Date | null;
+  type: string;
+  podcast: {
+    id: string;
+    showName: string;
+    primaryEmailSourceUrl: string | null;
+    outcome: string;
+  } | null;
+}
+
 export async function GET(request: NextRequest) {
   try {
     // Get date range from query params
@@ -63,9 +81,9 @@ export async function GET(request: NextRequest) {
 
     // Calculate aggregate stats
     const totalSent = touches.length;
-    const totalOpened = touches.filter((t) => t.opened).length;
-    const totalReplied = touches.filter((t) => t.replied).length;
-    const totalBounced = touches.filter((t) => t.bounced).length;
+    const totalOpened = touches.filter((t: TouchRecord) => t.opened).length;
+    const totalReplied = touches.filter((t: TouchRecord) => t.replied).length;
+    const totalBounced = touches.filter((t: TouchRecord) => t.bounced).length;
 
     // Calculate rates
     const openRate = totalSent > 0 ? (totalOpened / totalSent) * 100 : 0;
@@ -101,8 +119,8 @@ export async function GET(request: NextRequest) {
 
     // Recent tracking events (last 10)
     const recentEvents = touches
-      .filter((t) => t.opened || t.replied || t.bounced)
-      .map((t) => ({
+      .filter((t: TouchRecord) => t.opened || t.replied || t.bounced)
+      .map((t: TouchRecord) => ({
         podcastId: t.podcast?.id,
         podcastName: t.podcast?.showName || "Unknown",
         type: t.replied ? "replied" : t.bounced ? "bounced" : "opened",
