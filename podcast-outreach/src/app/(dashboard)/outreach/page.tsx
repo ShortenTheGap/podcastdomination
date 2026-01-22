@@ -9,7 +9,6 @@ import {
   CheckCircle,
   XCircle,
   Calendar,
-  ChevronRight,
   Loader2,
   Edit,
   Eye,
@@ -22,6 +21,7 @@ import {
   Wand2,
   Save,
   Play,
+  Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -170,7 +170,6 @@ async function syncCampaignsToServer(campaigns: OutreachPodcast[], retries = 3):
 }
 
 export default function OutreachPage() {
-  const [viewMode, setViewMode] = useState<"pipeline" | "list">("pipeline");
   const [selectedPodcast, setSelectedPodcast] = useState<OutreachPodcast | null>(null);
   const [filterStage, setFilterStage] = useState<OutreachStage | "all">("all");
   const [draggedPodcast, setDraggedPodcast] = useState<OutreachPodcast | null>(null);
@@ -592,32 +591,6 @@ export default function OutreachPage() {
               </span>
             ) : null}
           </div>
-
-          {/* View Toggle */}
-          <div className="flex bg-[#ead7a5] rounded-lg p-1">
-            <button
-              onClick={() => setViewMode("pipeline")}
-              className={cn(
-                "px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
-                viewMode === "pipeline"
-                  ? "bg-white shadow text-[#02121a]"
-                  : "text-[#006073] hover:text-[#02121a]"
-              )}
-            >
-              Pipeline
-            </button>
-            <button
-              onClick={() => setViewMode("list")}
-              className={cn(
-                "px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
-                viewMode === "list"
-                  ? "bg-white shadow text-[#02121a]"
-                  : "text-[#006073] hover:text-[#02121a]"
-              )}
-            >
-              List
-            </button>
-          </div>
         </div>
       </div>
 
@@ -634,7 +607,7 @@ export default function OutreachPage() {
         <div className="flex items-center justify-center h-64">
           <Loader2 className="h-8 w-8 animate-spin text-[#0a9396]" />
         </div>
-      ) : viewMode === "pipeline" ? (
+      ) : (
         // Pipeline View
         <div className="flex gap-4 overflow-x-auto pb-4">
           {PIPELINE_STAGES.map((stage) => (
@@ -650,44 +623,12 @@ export default function OutreachPage() {
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
               draggedPodcastId={draggedPodcast?.id || null}
+              onRemovePodcast={(id) => {
+                // Remove from outreach but keep in pipeline
+                updateLocalCampaigns(prev => prev.filter(c => c.id !== id));
+              }}
             />
           ))}
-        </div>
-      ) : (
-        // List View
-        <div className="bg-white border border-[#94d2bd] rounded-lg overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-[#ead7a5] border-b border-[#94d2bd]">
-                <tr>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-[#02121a]">Podcast</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-[#02121a]">Stage</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-[#02121a]">Emails Sent</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-[#02121a]">Response</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-[#02121a]">Last Contact</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-[#02121a]">Next Action</th>
-                  <th className="px-4 py-3"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#94d2bd]">
-                {podcasts.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-4 py-12 text-center text-[#006073]">
-                      No outreach campaigns yet. Add podcasts from the Discovery page.
-                    </td>
-                  </tr>
-                ) : (
-                  podcasts.map((podcast) => (
-                    <OutreachTableRow
-                      key={podcast.id}
-                      podcast={podcast}
-                      onClick={() => setSelectedPodcast(podcast)}
-                    />
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
         </div>
       )}
 
@@ -820,6 +761,7 @@ function PipelineColumn({
   onDragStart,
   onDragEnd,
   draggedPodcastId,
+  onRemovePodcast,
 }: {
   stage: { id: OutreachStage; label: string; color: string; icon: React.ReactNode };
   podcasts: OutreachPodcast[];
@@ -831,6 +773,7 @@ function PipelineColumn({
   onDragStart: (podcast: OutreachPodcast) => void;
   onDragEnd: () => void;
   draggedPodcastId: string | null;
+  onRemovePodcast: (id: string) => void;
 }) {
   return (
     <div className="flex-shrink-0 w-72">
@@ -866,6 +809,7 @@ function PipelineColumn({
               onDragStart={() => onDragStart(podcast)}
               onDragEnd={onDragEnd}
               isDragging={draggedPodcastId === podcast.id}
+              onRemove={() => onRemovePodcast(podcast.id)}
             />
           ))
         )}
@@ -881,12 +825,14 @@ function PipelineCard({
   onDragStart,
   onDragEnd,
   isDragging,
+  onRemove,
 }: {
   podcast: OutreachPodcast;
   onClick: () => void;
   onDragStart: () => void;
   onDragEnd: () => void;
   isDragging: boolean;
+  onRemove: () => void;
 }) {
   const sentCount = podcast.emailSequence?.filter((e) => e.status === "sent" || e.status === "opened" || e.status === "replied").length || 0;
 
@@ -896,6 +842,13 @@ function PipelineCard({
     onDragStart();
   };
 
+  const handleRemove = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent opening the detail sidebar
+    if (confirm(`Remove "${podcast.showName}" from outreach? The podcast will remain in your pipeline.`)) {
+      onRemove();
+    }
+  };
+
   return (
     <div
       draggable
@@ -903,24 +856,33 @@ function PipelineCard({
       onDragEnd={onDragEnd}
       onClick={onClick}
       className={cn(
-        "bg-white border border-[#94d2bd] rounded-lg p-3 hover:border-[#0a9396] hover:shadow-sm transition-all cursor-grab active:cursor-grabbing",
+        "bg-white border border-[#94d2bd] rounded-lg p-3 hover:border-[#0a9396] hover:shadow-sm transition-all cursor-grab active:cursor-grabbing group",
         isDragging && "opacity-50 shadow-lg ring-2 ring-[#0a9396]"
       )}
     >
       <div className="flex items-start justify-between gap-2 mb-2">
         <h4 className="font-medium text-[#02121a] text-sm line-clamp-1">{podcast.showName}</h4>
-        <span
-          className={cn(
-            "text-xs px-1.5 py-0.5 rounded font-medium",
-            podcast.tier === "TIER_1"
-              ? "bg-[#94d2bd] text-[#02121a]"
-              : podcast.tier === "TIER_2"
-              ? "bg-[#0a9396]/20 text-[#006073]"
-              : "bg-[#ead7a5] text-[#02121a]"
-          )}
-        >
-          {podcast.tier?.replace("_", " ")}
-        </span>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={handleRemove}
+            className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-50 rounded text-[#9d2227] transition-opacity"
+            title="Remove from outreach"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+          <span
+            className={cn(
+              "text-xs px-1.5 py-0.5 rounded font-medium",
+              podcast.tier === "TIER_1"
+                ? "bg-[#94d2bd] text-[#02121a]"
+                : podcast.tier === "TIER_2"
+                ? "bg-[#0a9396]/20 text-[#006073]"
+                : "bg-[#ead7a5] text-[#02121a]"
+            )}
+          >
+            {podcast.tier?.replace("_", " ")}
+          </span>
+        </div>
       </div>
 
       {podcast.hostName && (
@@ -956,70 +918,6 @@ function PipelineCard({
         </div>
       )}
     </div>
-  );
-}
-
-// Table Row Component
-function OutreachTableRow({
-  podcast,
-  onClick,
-}: {
-  podcast: OutreachPodcast;
-  onClick: () => void;
-}) {
-  const stage = PIPELINE_STAGES.find((s) => s.id === podcast.status);
-  const sentCount = podcast.emailSequence?.filter((e) => ["sent", "opened", "replied"].includes(e.status)).length || 0;
-
-  return (
-    <tr
-      onClick={onClick}
-      className="hover:bg-[#ead7a5] cursor-pointer transition-colors"
-    >
-      <td className="px-4 py-3">
-        <div>
-          <p className="font-medium text-[#02121a]">{podcast.showName}</p>
-          {podcast.hostName && (
-            <p className="text-sm text-[#006073]">{podcast.hostName}</p>
-          )}
-          {podcast.primaryEmail && (
-            <p className="text-xs text-[#0a9396] truncate">{podcast.primaryEmail}</p>
-          )}
-        </div>
-      </td>
-      <td className="px-4 py-3">
-        <span className={cn("inline-flex items-center gap-1.5 px-2 py-1 rounded text-sm", stage?.color)}>
-          {stage?.icon}
-          {stage?.label}
-        </span>
-      </td>
-      <td className="px-4 py-3 text-[#02121a]">{sentCount}</td>
-      <td className="px-4 py-3">
-        {podcast.responseType ? (
-          <ResponseBadge type={podcast.responseType} />
-        ) : (
-          <span className="text-[#006073]">-</span>
-        )}
-      </td>
-      <td className="px-4 py-3 text-sm text-[#006073]">
-        {podcast.lastContactedAt
-          ? new Date(podcast.lastContactedAt).toLocaleDateString()
-          : "-"}
-      </td>
-      <td className="px-4 py-3 text-sm text-[#006073]">
-        {podcast.nextFollowUpAt ? (
-          <span className="text-[#cb6701]">
-            Follow-up {new Date(podcast.nextFollowUpAt).toLocaleDateString()}
-          </span>
-        ) : (
-          "-"
-        )}
-      </td>
-      <td className="px-4 py-3">
-        <button className="p-1 hover:bg-[#ead7a5] rounded">
-          <ChevronRight className="h-4 w-4 text-[#006073]" />
-        </button>
-      </td>
-    </tr>
   );
 }
 

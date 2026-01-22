@@ -677,19 +677,6 @@ export default function PodcastDetailPage({ params }: Props) {
                   </>
                 )}
               </button>
-
-              {/* Skip Button */}
-              <button
-                onClick={() => skipMutation.mutate()}
-                disabled={skipMutation.isPending}
-                className="px-4 py-3 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 disabled:opacity-50"
-              >
-                {skipMutation.isPending ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                ) : (
-                  "Skip"
-                )}
-              </button>
             </div>
 
             {startOutreachMutation.isError && (
