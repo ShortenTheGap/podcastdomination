@@ -279,8 +279,8 @@ export async function getTrackingStats(podcastId: string): Promise<{
   });
 
   const totalSent = touches.length;
-  const totalOpened = touches.filter((t) => t.opened).length;
-  const totalReplied = touches.filter((t) => t.replied).length;
+  const totalOpened = touches.filter((t: { opened: boolean }) => t.opened).length;
+  const totalReplied = touches.filter((t: { replied: boolean }) => t.replied).length;
 
   return {
     totalSent,
@@ -336,9 +336,9 @@ export async function getAggregateTrackingStats(
   });
 
   const totalSent = touches.length;
-  const totalOpened = touches.filter((t) => t.opened).length;
-  const totalReplied = touches.filter((t) => t.replied).length;
-  const totalBounced = touches.filter((t) => t.bounced).length;
+  const totalOpened = touches.filter((t: { opened: boolean }) => t.opened).length;
+  const totalReplied = touches.filter((t: { replied: boolean }) => t.replied).length;
+  const totalBounced = touches.filter((t: { bounced: boolean }) => t.bounced).length;
 
   // Group by week
   const byWeekMap = new Map<
