@@ -133,7 +133,7 @@ export default function PodcastDetailPage({ params }: Props) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["podcast", id] });
       setIsEditingContact(false);
-      setEmailFinderResult(null);
+      // Keep emailFinderResult visible so user can see found emails and change selection
     },
   });
 
@@ -200,9 +200,17 @@ export default function PodcastDetailPage({ params }: Props) {
     },
   });
 
-  // Use alternate email
+  // Use alternate email - enters edit mode with the selected email
   const useAlternateEmail = (email: string) => {
-    setContactForm(prev => ({ ...prev, primaryEmail: email }));
+    if (!isEditingContact) {
+      setContactForm({
+        primaryEmail: email,
+        hostName: podcast?.hostName || "",
+      });
+      setIsEditingContact(true);
+    } else {
+      setContactForm(prev => ({ ...prev, primaryEmail: email }));
+    }
   };
 
   // Start outreach mutation - add to outreach page
@@ -343,6 +351,7 @@ export default function PodcastDetailPage({ params }: Props) {
               </div>
             )}
           </div>
+          {/* Current email display / edit form */}
           {isEditingContact ? (
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-4">
@@ -379,141 +388,6 @@ export default function PodcastDetailPage({ params }: Props) {
                   </>
                 )}
               </button>
-              {emailFinderResult && (
-                <div className="space-y-3">
-                  {/* Main result */}
-                  <div className={cn(
-                    "text-sm p-3 rounded border",
-                    emailFinderResult.success ? "bg-[#d4f0e7] border-[#94d2bd] text-[#006073]" : "bg-[#f5edd8] border-[#ead7a5] text-[#b02013]"
-                  )}>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-medium">{emailFinderResult.message}</span>
-                      {emailFinderResult.confidence !== undefined && emailFinderResult.confidence > 0 && (
-                        <span className={cn(
-                          "text-xs px-2 py-0.5 rounded-full font-medium",
-                          emailFinderResult.confidence >= 0.8 ? "bg-[#94d2bd] text-[#006073]" :
-                          emailFinderResult.confidence >= 0.5 ? "bg-[#ead7a5] text-[#b02013]" :
-                          "bg-[#f5edd8] text-[#b02013]"
-                        )}>
-                          {Math.round(emailFinderResult.confidence * 100)}% confidence
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Source Details - How it was found */}
-                    {emailFinderResult.sourceDetails && (
-                      <div className="mt-2 pt-2 border-t border-[#94d2bd]/50 space-y-2">
-                        <div className="flex items-start gap-2">
-                          <span className={cn(
-                            "text-xs px-1.5 py-0.5 rounded font-medium flex-shrink-0",
-                            emailFinderResult.sourceDetails.reliability === "high" ? "bg-green-200 text-[#006073]" :
-                            emailFinderResult.sourceDetails.reliability === "medium" ? "bg-[#ead7a5] text-[#b02013]" :
-                            "bg-[#ead7a5] text-[#b02013]"
-                          )}>
-                            {emailFinderResult.sourceDetails.reliability === "high" ? "HIGH" :
-                             emailFinderResult.sourceDetails.reliability === "medium" ? "MEDIUM" : "LOW"} reliability
-                          </span>
-                          <span className="text-xs font-medium">{emailFinderResult.sourceDetails.method}</span>
-                        </div>
-                        <p className="text-xs opacity-90">{emailFinderResult.sourceDetails.description}</p>
-
-                        {emailFinderResult.sourceDetails.pageChecked && (
-                          <a
-                            href={emailFinderResult.sourceDetails.pageChecked}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-xs underline opacity-75 block"
-                          >
-                            View source page
-                          </a>
-                        )}
-
-                        {emailFinderResult.sourceDetails.verificationTips && emailFinderResult.sourceDetails.verificationTips.length > 0 && (
-                          <details className="text-xs">
-                            <summary className="cursor-pointer opacity-75 hover:opacity-100">Verification tips</summary>
-                            <ul className="mt-1 space-y-0.5 pl-3">
-                              {emailFinderResult.sourceDetails.verificationTips.map((tip, i) => (
-                                <li key={i} className="opacity-80">• {tip}</li>
-                              ))}
-                            </ul>
-                          </details>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Fallback source URL if no sourceDetails */}
-                    {!emailFinderResult.sourceDetails && emailFinderResult.sourceUrl && (
-                      <a
-                        href={emailFinderResult.sourceUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs underline opacity-75 mt-1 block"
-                      >
-                        View source
-                      </a>
-                    )}
-                  </div>
-
-                  {/* Alternate emails */}
-                  {emailFinderResult.alternateEmails && emailFinderResult.alternateEmails.length > 0 && (
-                    <div className="bg-[#f5edd8] border border-[#94d2bd] p-3 rounded">
-                      <p className="text-xs font-medium text-[#006073] mb-2">Other emails found:</p>
-                      <div className="space-y-2">
-                        {emailFinderResult.alternateEmails.map((alt, i) => (
-                          <div key={i} className="flex items-start justify-between gap-2 text-sm p-2 bg-white rounded border border-[#94d2bd]">
-                            <div className="flex-1 min-w-0">
-                              <span className="text-[#02121a] font-medium">{alt.email}</span>
-                              {alt.sourceDetails && (
-                                <p className="text-xs text-[#006073] mt-0.5">
-                                  {alt.sourceDetails.method}
-                                  <span className={cn(
-                                    "ml-1 px-1 py-0.5 rounded text-[10px]",
-                                    alt.sourceDetails.reliability === "high" ? "bg-[#94d2bd] text-[#0a9396]" :
-                                    alt.sourceDetails.reliability === "medium" ? "bg-[#ead7a5] text-[#bb3f03]" :
-                                    "bg-[#f5edd8] text-[#bb3f03]"
-                                  )}>
-                                    {alt.sourceDetails.reliability}
-                                  </span>
-                                </p>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-2 flex-shrink-0">
-                              <span className="text-xs text-[#006073]">
-                                {Math.round(alt.confidence * 100)}%
-                              </span>
-                              <button
-                                onClick={() => useAlternateEmail(alt.email)}
-                                className="text-xs text-[#0a9396] hover:text-[#006073] font-medium"
-                              >
-                                Use this
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Suggestions when not found */}
-                  {!emailFinderResult.success && emailFinderResult.suggestions && emailFinderResult.suggestions.length > 0 && (
-                    <div className="bg-[#d4f0e7] border border-[#94d2bd] p-3 rounded">
-                      <p className="text-xs font-medium text-[#006073] mb-2">Suggestions:</p>
-                      <ul className="text-xs text-[#0a9396] space-y-1">
-                        {emailFinderResult.suggestions.slice(0, 4).map((suggestion, i) => (
-                          <li key={i}>• {suggestion}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  {/* Discovered website */}
-                  {emailFinderResult.discoveredWebsiteUrl && (
-                    <div className="text-xs text-[#0a9396] bg-[#d4f0e7] border border-[#94d2bd] p-2 rounded">
-                      Discovered website: <a href={emailFinderResult.discoveredWebsiteUrl} target="_blank" rel="noopener noreferrer" className="underline font-medium">{emailFinderResult.discoveredWebsiteUrl}</a>
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
           ) : (
             <div className="flex items-center justify-between">
@@ -521,7 +395,7 @@ export default function PodcastDetailPage({ params }: Props) {
                 <Mail className="h-4 w-4 text-[#94d2bd]" />
                 {podcast.primaryEmail || "No email added"}
               </div>
-              {!podcast.primaryEmail && (
+              {!podcast.primaryEmail && !emailFinderResult && (
                 <button
                   onClick={() => {
                     setContactForm({
@@ -546,6 +420,143 @@ export default function PodcastDetailPage({ params }: Props) {
                     </>
                   )}
                 </button>
+              )}
+            </div>
+          )}
+
+          {/* Email finder results - always visible when available */}
+          {emailFinderResult && (
+            <div className="space-y-3 mt-4 pt-4 border-t border-[#94d2bd]/50">
+              {/* Main result */}
+              <div className={cn(
+                "text-sm p-3 rounded border",
+                emailFinderResult.success ? "bg-[#d4f0e7] border-[#94d2bd] text-[#006073]" : "bg-[#f5edd8] border-[#ead7a5] text-[#b02013]"
+              )}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-medium">{emailFinderResult.message}</span>
+                  {emailFinderResult.confidence !== undefined && emailFinderResult.confidence > 0 && (
+                    <span className={cn(
+                      "text-xs px-2 py-0.5 rounded-full font-medium",
+                      emailFinderResult.confidence >= 0.8 ? "bg-[#94d2bd] text-[#006073]" :
+                      emailFinderResult.confidence >= 0.5 ? "bg-[#ead7a5] text-[#b02013]" :
+                      "bg-[#f5edd8] text-[#b02013]"
+                    )}>
+                      {Math.round(emailFinderResult.confidence * 100)}% confidence
+                    </span>
+                  )}
+                </div>
+
+                {/* Source Details - How it was found */}
+                {emailFinderResult.sourceDetails && (
+                  <div className="mt-2 pt-2 border-t border-[#94d2bd]/50 space-y-2">
+                    <div className="flex items-start gap-2">
+                      <span className={cn(
+                        "text-xs px-1.5 py-0.5 rounded font-medium flex-shrink-0",
+                        emailFinderResult.sourceDetails.reliability === "high" ? "bg-green-200 text-[#006073]" :
+                        emailFinderResult.sourceDetails.reliability === "medium" ? "bg-[#ead7a5] text-[#b02013]" :
+                        "bg-[#ead7a5] text-[#b02013]"
+                      )}>
+                        {emailFinderResult.sourceDetails.reliability === "high" ? "HIGH" :
+                         emailFinderResult.sourceDetails.reliability === "medium" ? "MEDIUM" : "LOW"} reliability
+                      </span>
+                      <span className="text-xs font-medium">{emailFinderResult.sourceDetails.method}</span>
+                    </div>
+                    <p className="text-xs opacity-90">{emailFinderResult.sourceDetails.description}</p>
+
+                    {emailFinderResult.sourceDetails.pageChecked && (
+                      <a
+                        href={emailFinderResult.sourceDetails.pageChecked}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs underline opacity-75 block"
+                      >
+                        View source page
+                      </a>
+                    )}
+
+                    {emailFinderResult.sourceDetails.verificationTips && emailFinderResult.sourceDetails.verificationTips.length > 0 && (
+                      <details className="text-xs">
+                        <summary className="cursor-pointer opacity-75 hover:opacity-100">Verification tips</summary>
+                        <ul className="mt-1 space-y-0.5 pl-3">
+                          {emailFinderResult.sourceDetails.verificationTips.map((tip, i) => (
+                            <li key={i} className="opacity-80">• {tip}</li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+                  </div>
+                )}
+
+                {/* Fallback source URL if no sourceDetails */}
+                {!emailFinderResult.sourceDetails && emailFinderResult.sourceUrl && (
+                  <a
+                    href={emailFinderResult.sourceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs underline opacity-75 mt-1 block"
+                  >
+                    View source
+                  </a>
+                )}
+              </div>
+
+              {/* Alternate emails */}
+              {emailFinderResult.alternateEmails && emailFinderResult.alternateEmails.length > 0 && (
+                <div className="bg-[#f5edd8] border border-[#94d2bd] p-3 rounded">
+                  <p className="text-xs font-medium text-[#006073] mb-2">Other emails found:</p>
+                  <div className="space-y-2">
+                    {emailFinderResult.alternateEmails.map((alt, i) => (
+                      <div key={i} className="flex items-start justify-between gap-2 text-sm p-2 bg-white rounded border border-[#94d2bd]">
+                        <div className="flex-1 min-w-0">
+                          <span className="text-[#02121a] font-medium">{alt.email}</span>
+                          {alt.sourceDetails && (
+                            <p className="text-xs text-[#006073] mt-0.5">
+                              {alt.sourceDetails.method}
+                              <span className={cn(
+                                "ml-1 px-1 py-0.5 rounded text-[10px]",
+                                alt.sourceDetails.reliability === "high" ? "bg-[#94d2bd] text-[#0a9396]" :
+                                alt.sourceDetails.reliability === "medium" ? "bg-[#ead7a5] text-[#bb3f03]" :
+                                "bg-[#f5edd8] text-[#bb3f03]"
+                              )}>
+                                {alt.sourceDetails.reliability}
+                              </span>
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <span className="text-xs text-[#006073]">
+                            {Math.round(alt.confidence * 100)}%
+                          </span>
+                          <button
+                            onClick={() => useAlternateEmail(alt.email)}
+                            className="text-xs text-[#0a9396] hover:text-[#006073] font-medium"
+                          >
+                            Use this
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Suggestions when not found */}
+              {!emailFinderResult.success && emailFinderResult.suggestions && emailFinderResult.suggestions.length > 0 && (
+                <div className="bg-[#d4f0e7] border border-[#94d2bd] p-3 rounded">
+                  <p className="text-xs font-medium text-[#006073] mb-2">Suggestions:</p>
+                  <ul className="text-xs text-[#0a9396] space-y-1">
+                    {emailFinderResult.suggestions.slice(0, 4).map((suggestion, i) => (
+                      <li key={i}>• {suggestion}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Discovered website */}
+              {emailFinderResult.discoveredWebsiteUrl && (
+                <div className="text-xs text-[#0a9396] bg-[#d4f0e7] border border-[#94d2bd] p-2 rounded">
+                  Discovered website: <a href={emailFinderResult.discoveredWebsiteUrl} target="_blank" rel="noopener noreferrer" className="underline font-medium">{emailFinderResult.discoveredWebsiteUrl}</a>
+                </div>
               )}
             </div>
           )}
