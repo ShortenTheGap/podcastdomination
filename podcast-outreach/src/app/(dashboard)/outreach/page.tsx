@@ -255,6 +255,49 @@ export default function OutreachPage() {
     refetchOnReconnect: false, // DISABLED: Prevents overwriting on reconnect
   });
 
+  // Fetch podcast data to sync emails from the podcast database
+  const { data: podcastsData } = useQuery({
+    queryKey: ["podcasts"],
+    queryFn: async () => {
+      const res = await fetch("/api/podcasts");
+      if (!res.ok) throw new Error("Failed to fetch");
+      return res.json();
+    },
+    staleTime: 30000,
+    refetchOnWindowFocus: true,
+  });
+
+  // Sync emails from podcast database to campaigns
+  // This ensures campaigns always have the latest email from the podcast
+  useEffect(() => {
+    if (!podcastsData?.podcasts || !localCampaigns.length) return;
+
+    const podcasts = podcastsData.podcasts;
+    let emailsNeedSync = false;
+
+    const syncedCampaigns = localCampaigns.map(campaign => {
+      const podcast = podcasts.find((p: { id: string }) => p.id === campaign.id);
+      if (podcast && podcast.primaryEmail !== campaign.primaryEmail) {
+        console.log(`[PodcastSync] Syncing email for ${campaign.showName}: "${campaign.primaryEmail}" -> "${podcast.primaryEmail}"`);
+        emailsNeedSync = true;
+        return { ...campaign, primaryEmail: podcast.primaryEmail };
+      }
+      return campaign;
+    });
+
+    if (emailsNeedSync) {
+      setLocalCampaigns(syncedCampaigns);
+      saveToLocalStorage(syncedCampaigns);
+      // Also sync to server so the email is persisted in campaigns storage
+      syncCampaignsToServer(syncedCampaigns).then(success => {
+        if (success) {
+          console.log("[PodcastSync] Successfully synced podcast emails to campaigns");
+          justSyncedRef.current = true;
+        }
+      });
+    }
+  }, [podcastsData, localCampaigns.length]); // Only re-run when podcasts data or campaign count changes
+
   // Initialize campaigns from server data OR localStorage backup
   // CRITICAL: Compare timestamps to use the most recent data
   // CRITICAL: Never overwrite local changes that haven't been synced
