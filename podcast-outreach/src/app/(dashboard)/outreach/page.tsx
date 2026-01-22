@@ -1366,11 +1366,13 @@ function EmailSequenceTimeline({
         }
       }
 
-      // Load email settings from localStorage for follow-up timing
+      // Load email settings from localStorage for follow-up timing and signature
       let emailSettings = {
         followUp1Days: 5,
         followUp2Days: 7,
         followUp3Days: 14,
+        senderName: "",
+        signature: "",
       };
 
       if (typeof window !== "undefined") {
@@ -1382,6 +1384,8 @@ function EmailSequenceTimeline({
               followUp1Days: parsed.followUp1Days || 5,
               followUp2Days: parsed.followUp2Days || 7,
               followUp3Days: parsed.followUp3Days || 14,
+              senderName: parsed.senderName || "",
+              signature: parsed.signature || "",
             };
           } catch {}
         }
@@ -1398,6 +1402,8 @@ function EmailSequenceTimeline({
           body: initialEmail.body,
           status: "sent",
           action: "send",
+          senderName: emailSettings.senderName,
+          signature: emailSettings.signature,
         }),
       });
 
@@ -1456,8 +1462,15 @@ function EmailSequenceTimeline({
         // Show success toast
         onShowToast("Campaign started! Initial email sent.", "success");
       } else {
-        // API returned an error
-        onShowToast("Failed to send email. Please check your Gmail connection.", "error", {
+        // API returned an error - try to get the error message
+        let errorMessage = "Failed to send email. Please check your Gmail connection.";
+        try {
+          const errorData = await res.json();
+          if (errorData.error) {
+            errorMessage = errorData.error;
+          }
+        } catch {}
+        onShowToast(errorMessage, "error", {
           label: "Go to Settings →",
           href: "/settings"
         });

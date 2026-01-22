@@ -1,6 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, isPrismaAvailable } from "@/lib/db";
 import { getDemoCampaignAsync, updateDemoCampaignAsync } from "@/lib/demo-campaigns";
+import { GmailClient } from "@/lib/gmail";
+import { getGmailTokens } from "@/app/api/auth/gmail/route";
+
+// Create Gmail client from stored OAuth tokens
+async function getGmailClient(): Promise<GmailClient | null> {
+  const tokens = await getGmailTokens();
+  if (!tokens) {
+    return null;
+  }
+  return new GmailClient({
+    access_token: tokens.accessToken,
+    refresh_token: tokens.refreshToken,
+  });
+}
 
 // Map email type to touch type
 function mapEmailTypeToTouchType(emailType: string) {
@@ -120,7 +134,7 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const { type, subject, body, status, scheduledFor, emailSequence } = await request.json();
+    const { type, subject, body, status, scheduledFor, emailSequence, action, senderName, signature } = await request.json();
 
     // Handle bulk email sequence update
     if (emailSequence && Array.isArray(emailSequence)) {
@@ -142,6 +156,51 @@ export async function POST(
       // Update email in file-persisted demo campaign
       const campaign = await getDemoCampaignAsync(id);
       if (campaign) {
+        // If action is "send", actually send the email via Gmail
+        let gmailMessageId: string | null = null;
+        let gmailThreadId: string | null = null;
+
+        if (action === "send" && status === "sent") {
+          // Get recipient email from campaign
+          const recipientEmail = campaign.primaryEmail;
+          if (!recipientEmail) {
+            return NextResponse.json({
+              error: "No recipient email address found for this podcast"
+            }, { status: 400 });
+          }
+
+          // Get Gmail client
+          const gmail = await getGmailClient();
+          if (!gmail) {
+            return NextResponse.json({
+              error: "Gmail not connected. Please connect your Gmail account in Settings."
+            }, { status: 400 });
+          }
+
+          // Build the full email body with optional signature
+          let fullBody = body;
+          if (signature) {
+            fullBody = `${body}\n\n${signature}`;
+          }
+
+          // Send the email
+          try {
+            const result = await gmail.sendEmail({
+              to: recipientEmail,
+              subject: subject,
+              body: fullBody,
+            });
+            gmailMessageId = result.id;
+            gmailThreadId = result.threadId;
+            console.log(`Email sent successfully to ${recipientEmail}. Message ID: ${result.id}`);
+          } catch (sendError) {
+            console.error("Failed to send email via Gmail:", sendError);
+            return NextResponse.json({
+              error: sendError instanceof Error ? sendError.message : "Failed to send email via Gmail"
+            }, { status: 500 });
+          }
+        }
+
         const existingSequence = campaign.emailSequence || [];
         const emailIndex = existingSequence.findIndex(e => e.type === type);
 
@@ -179,8 +238,10 @@ export async function POST(
 
         return NextResponse.json({
           success: true,
-          message: "Email saved to persistent storage",
+          message: action === "send" ? "Email sent successfully" : "Email saved to persistent storage",
           email: newEmail,
+          gmailMessageId,
+          gmailThreadId,
         });
       }
 
@@ -215,6 +276,43 @@ export async function POST(
         return NextResponse.json({ error: "No email address" }, { status: 400 });
       }
 
+      // If action is "send", actually send the email via Gmail
+      let gmailMessageId: string | null = null;
+      let gmailThreadId: string | null = null;
+
+      if (action === "send") {
+        // Get Gmail client
+        const gmail = await getGmailClient();
+        if (!gmail) {
+          return NextResponse.json({
+            error: "Gmail not connected. Please connect your Gmail account in Settings."
+          }, { status: 400 });
+        }
+
+        // Build the full email body with optional signature
+        let fullBody = body;
+        if (signature) {
+          fullBody = `${body}\n\n${signature}`;
+        }
+
+        // Send the email
+        try {
+          const result = await gmail.sendEmail({
+            to: podcast.primaryEmail,
+            subject: subject,
+            body: fullBody,
+          });
+          gmailMessageId = result.id;
+          gmailThreadId = result.threadId;
+          console.log(`Email sent successfully to ${podcast.primaryEmail}. Message ID: ${result.id}`);
+        } catch (sendError) {
+          console.error("Failed to send email via Gmail:", sendError);
+          return NextResponse.json({
+            error: sendError instanceof Error ? sendError.message : "Failed to send email via Gmail"
+          }, { status: 500 });
+        }
+      }
+
       const touch = await prisma.touch.create({
         data: {
           podcastId: id,
@@ -239,6 +337,8 @@ export async function POST(
       return NextResponse.json({
         success: true,
         email: touch,
+        gmailMessageId,
+        gmailThreadId,
       });
     }
 
