@@ -19,13 +19,25 @@ export interface EmailFinderResult {
   sourceUrl?: string;
   confidence: number; // 0.0 to 1.0
   message: string;
+  sourceDetails?: EmailSourceDetails; // Detailed info about how email was found
   alternateEmails?: Array<{
     email: string;
     source: EmailSource;
     sourceUrl?: string;
     confidence: number;
+    sourceDetails?: EmailSourceDetails;
   }>;
   discoveredWebsiteUrl?: string; // If we found a website URL that wasn't provided
+}
+
+// Detailed information about how an email was discovered
+export interface EmailSourceDetails {
+  method: string; // Human-readable method name
+  description: string; // Detailed description of how it was found
+  extractionType?: string; // e.g., "mailto_link", "text_regex", "itunes_tag", etc.
+  pageChecked?: string; // The specific page where it was found
+  reliability: "high" | "medium" | "low"; // Reliability indicator
+  verificationTips?: string[]; // Tips for verifying this email
 }
 
 export type EmailSource =
@@ -169,6 +181,7 @@ export async function findEmail(input: EmailFinderInput): Promise<EmailFinderRes
     source: EmailSource;
     sourceUrl?: string;
     confidence: number;
+    extractionType?: string;
   }> = [];
 
   let discoveredWebsiteUrl: string | undefined;
@@ -263,7 +276,11 @@ export async function findEmail(input: EmailFinderInput): Promise<EmailFinderRes
       sourceUrl: best.sourceUrl,
       confidence: best.confidence,
       message: `Email found via ${formatSource(best.source)}`,
-      alternateEmails: rankedEmails.slice(1, 3), // Include up to 2 alternates
+      sourceDetails: getSourceDetails(best.source, best.extractionType, best.sourceUrl),
+      alternateEmails: rankedEmails.slice(1, 3).map(alt => ({
+        ...alt,
+        sourceDetails: getSourceDetails(alt.source, alt.extractionType, alt.sourceUrl),
+      })),
       discoveredWebsiteUrl,
     };
   }
@@ -356,12 +373,14 @@ async function scrapePageForEmails(pageUrl: string): Promise<Array<{
   source: EmailSource;
   sourceUrl: string;
   confidence: number;
+  extractionType: string;
 }>> {
   const results: Array<{
     email: string;
     source: EmailSource;
     sourceUrl: string;
     confidence: number;
+    extractionType: string;
   }> = [];
 
   try {
@@ -392,6 +411,7 @@ async function scrapePageForEmails(pageUrl: string): Promise<Array<{
           source: "website_scrape",
           sourceUrl: pageUrl,
           confidence: 0.95, // mailto links are very reliable
+          extractionType: "mailto_link",
         });
       }
     }
@@ -413,6 +433,7 @@ async function scrapePageForEmails(pageUrl: string): Promise<Array<{
             source: "website_scrape",
             sourceUrl: pageUrl,
             confidence: 0.7, // Text matches are less certain
+            extractionType: "text_regex",
           });
         }
       }
@@ -432,6 +453,7 @@ async function parseRssFeedForEmail(feedUrl: string): Promise<Array<{
   source: EmailSource;
   sourceUrl: string;
   confidence: number;
+  extractionType: string;
 }>> {
   console.log("[EmailFinder] Parsing RSS feed:", feedUrl);
   const results: Array<{
@@ -439,6 +461,7 @@ async function parseRssFeedForEmail(feedUrl: string): Promise<Array<{
     source: EmailSource;
     sourceUrl: string;
     confidence: number;
+    extractionType: string;
   }> = [];
 
   try {
@@ -469,6 +492,7 @@ async function parseRssFeedForEmail(feedUrl: string): Promise<Array<{
           source: "rss_feed",
           sourceUrl: feedUrl,
           confidence: 0.9, // RSS itunes:email is official
+          extractionType: "itunes_email",
         });
       }
     }
@@ -486,6 +510,7 @@ async function parseRssFeedForEmail(feedUrl: string): Promise<Array<{
             source: "rss_feed",
             sourceUrl: feedUrl,
             confidence: 0.85,
+            extractionType: "managing_editor",
           });
         }
       }
@@ -504,6 +529,7 @@ async function parseRssFeedForEmail(feedUrl: string): Promise<Array<{
             source: "rss_feed",
             sourceUrl: feedUrl,
             confidence: 0.8,
+            extractionType: "webmaster",
           });
         }
       }
@@ -867,6 +893,7 @@ function rankEmails(
     source: EmailSource;
     sourceUrl?: string;
     confidence: number;
+    extractionType?: string;
   }>,
   hostName?: string
 ): Array<{
@@ -874,6 +901,7 @@ function rankEmails(
   source: EmailSource;
   sourceUrl?: string;
   confidence: number;
+  extractionType?: string;
 }> {
   // Deduplicate by email address
   const unique = new Map<string, typeof emails[0]>();
@@ -943,5 +971,142 @@ function formatSource(source: EmailSource): string {
       return "pattern generation";
     default:
       return source;
+  }
+}
+
+/**
+ * Get detailed source information for UI display
+ */
+export function getSourceDetails(
+  source: EmailSource,
+  extractionType?: string,
+  pageUrl?: string
+): EmailSourceDetails {
+  switch (source) {
+    case "database":
+      return {
+        method: "Database Record",
+        description: "Email was previously saved in your database",
+        reliability: "high",
+        verificationTips: ["This email has been used before or manually entered"],
+      };
+
+    case "website_scrape":
+      if (extractionType === "mailto_link") {
+        return {
+          method: "Website mailto: Link",
+          description: `Found via a clickable email link on the podcast's website`,
+          extractionType: "mailto_link",
+          pageChecked: pageUrl,
+          reliability: "high",
+          verificationTips: [
+            "This email was found in a mailto: link, indicating it's meant for public contact",
+            "The podcast actively displays this email for visitors to use",
+          ],
+        };
+      }
+      return {
+        method: "Website Text Extraction",
+        description: `Found by scanning text content on the podcast's website`,
+        extractionType: "text_regex",
+        pageChecked: pageUrl,
+        reliability: "medium",
+        verificationTips: [
+          "Email was found in page text - may be for general contact",
+          "Verify this is the right contact for podcast booking",
+          "Consider checking if there's a dedicated booking/guest page",
+        ],
+      };
+
+    case "rss_feed":
+      if (extractionType === "itunes_email") {
+        return {
+          method: "Podcast RSS Feed (iTunes Tag)",
+          description: "Found in the official <itunes:email> tag of the podcast's RSS feed",
+          extractionType: "itunes_email",
+          pageChecked: pageUrl,
+          reliability: "high",
+          verificationTips: [
+            "This is the official contact email registered with Apple Podcasts",
+            "Podcast hosts configure this email specifically for listener contact",
+          ],
+        };
+      }
+      if (extractionType === "managing_editor") {
+        return {
+          method: "RSS Feed (Managing Editor)",
+          description: "Found in the RSS feed's <managingEditor> field",
+          extractionType: "managing_editor",
+          pageChecked: pageUrl,
+          reliability: "medium",
+          verificationTips: [
+            "This email is for the person managing the RSS feed",
+            "May be technical staff rather than the host - verify before sending",
+          ],
+        };
+      }
+      return {
+        method: "Podcast RSS Feed",
+        description: "Found in the podcast's RSS feed metadata",
+        extractionType: extractionType || "rss_field",
+        pageChecked: pageUrl,
+        reliability: "medium",
+        verificationTips: [
+          "Email was found in RSS feed metadata",
+          "Verify this reaches the right person for booking",
+        ],
+      };
+
+    case "hunter_io":
+      return {
+        method: "Hunter.io Email Database",
+        description: "Found via Hunter.io's professional email database, which indexes publicly available emails",
+        extractionType: "hunter_domain_search",
+        reliability: "medium",
+        verificationTips: [
+          "Hunter.io aggregates emails from public sources like LinkedIn, websites, etc.",
+          "Confidence depends on how many sources verified this email",
+          "Consider sending a verification email first if confidence is low",
+        ],
+      };
+
+    case "apple_podcasts":
+      return {
+        method: "Apple Podcasts API",
+        description: "Discovered through Apple Podcasts' public API metadata",
+        extractionType: "apple_api",
+        reliability: "medium",
+        verificationTips: [
+          "This information came from Apple's podcast directory",
+          "May need additional verification",
+        ],
+      };
+
+    case "pattern_generated":
+      return {
+        method: "Email Pattern Generation",
+        description: "Generated based on common email patterns using the host's name and domain",
+        extractionType: "pattern_guess",
+        reliability: "low",
+        verificationTips: [
+          "⚠️ This email is a guess and has NOT been verified",
+          "Common patterns like firstname@domain.com are often correct",
+          "Consider using an email verification service before sending",
+          "Alternatively, reach out via social media to confirm the email",
+        ],
+      };
+
+    case "not_found":
+    default:
+      return {
+        method: "Not Found",
+        description: "Could not automatically discover an email address",
+        reliability: "low",
+        verificationTips: [
+          "Try searching the podcast's social media profiles",
+          "Look for a contact form on their website",
+          "Check their LinkedIn for contact information",
+        ],
+      };
   }
 }

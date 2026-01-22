@@ -11,6 +11,14 @@ import {
   TrendingDown,
   Minus,
   Loader2,
+  Globe,
+  Rss,
+  Search,
+  Database,
+  AlertCircle,
+  Eye,
+  MousePointer,
+  XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -228,6 +236,58 @@ function formatRelativeTime(dateStr: string): string {
   return date.toLocaleDateString();
 }
 
+// Interface for tracking stats from database
+interface TrackingStats {
+  summary: {
+    totalSent: number;
+    totalOpened: number;
+    totalReplied: number;
+    totalBounced: number;
+    openRate: number;
+    replyRate: number;
+    bounceRate: number;
+  };
+  weeklyData: Array<{
+    week: string;
+    sent: number;
+    opened: number;
+    replied: number;
+    bounced: number;
+    openRate: number;
+    replyRate: number;
+  }>;
+  sourceAnalysis: {
+    bySource: Array<{ source: string; count: number; percentage: number }>;
+    totalWithEmail: number;
+    totalWithoutEmail: number;
+  };
+  recentEvents: Array<{
+    podcastId: string;
+    podcastName: string;
+    type: "opened" | "replied" | "bounced";
+    eventAt: string;
+  }>;
+}
+
+// Get icon and color for email source
+function getSourceIcon(source: string) {
+  switch (source) {
+    case "Website Contact Page":
+    case "Website Scrape":
+      return { icon: Globe, color: "text-blue-600", bgColor: "bg-blue-100" };
+    case "RSS Feed":
+      return { icon: Rss, color: "text-orange-600", bgColor: "bg-orange-100" };
+    case "Hunter.io":
+      return { icon: Search, color: "text-purple-600", bgColor: "bg-purple-100" };
+    case "Apple Podcasts":
+      return { icon: Database, color: "text-pink-600", bgColor: "bg-pink-100" };
+    case "Personal Email":
+      return { icon: Mail, color: "text-green-600", bgColor: "bg-green-100" };
+    default:
+      return { icon: Mail, color: "text-slate-600", bgColor: "bg-slate-100" };
+  }
+}
+
 export default function AnalyticsPage() {
   // Fetch real campaign data
   const { data: campaignsData, isLoading } = useQuery({
@@ -235,6 +295,16 @@ export default function AnalyticsPage() {
     queryFn: async () => {
       const res = await fetch("/api/outreach/campaigns");
       if (!res.ok) throw new Error("Failed to fetch campaigns");
+      return res.json();
+    },
+  });
+
+  // Fetch database tracking stats
+  const { data: trackingData, isLoading: isLoadingTracking } = useQuery<TrackingStats>({
+    queryKey: ["tracking-stats"],
+    queryFn: async () => {
+      const res = await fetch("/api/analytics/tracking?days=90");
+      if (!res.ok) throw new Error("Failed to fetch tracking stats");
       return res.json();
     },
   });
@@ -468,6 +538,217 @@ export default function AnalyticsPage() {
             </CardContent>
           </Card>
         </div>
+      </div>
+
+      {/* Email Source & Tracking Section */}
+      <div className="mt-8 pt-6 border-t border-[#94d2bd]">
+        <h2 className="text-xl font-bold text-[#02121a] mb-4">Email Discovery & Tracking</h2>
+
+        <div className="grid gap-6 lg:grid-cols-2">
+          {/* Email Source Breakdown */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-[#02121a] flex items-center gap-2">
+                <Search className="h-5 w-5 text-[#0a9396]" />
+                Email Source Breakdown
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoadingTracking ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-[#0a9396]" />
+                </div>
+              ) : trackingData?.sourceAnalysis?.bySource && trackingData.sourceAnalysis.bySource.length > 0 ? (
+                <div className="space-y-4">
+                  {/* Stats summary */}
+                  <div className="flex gap-4 text-sm mb-4">
+                    <div className="flex items-center gap-1">
+                      <span className="font-medium text-[#02121a]">{trackingData.sourceAnalysis.totalWithEmail}</span>
+                      <span className="text-[#006073]">with email</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="font-medium text-[#9d2227]">{trackingData.sourceAnalysis.totalWithoutEmail}</span>
+                      <span className="text-[#006073]">without email</span>
+                    </div>
+                  </div>
+
+                  {/* Source bars */}
+                  <div className="space-y-3">
+                    {trackingData.sourceAnalysis.bySource.map((source) => {
+                      const { icon: Icon, color, bgColor } = getSourceIcon(source.source);
+                      return (
+                        <div key={source.source} className="space-y-1">
+                          <div className="flex items-center justify-between text-sm">
+                            <div className="flex items-center gap-2">
+                              <div className={cn("p-1 rounded", bgColor)}>
+                                <Icon className={cn("h-3 w-3", color)} />
+                              </div>
+                              <span className="text-[#02121a] font-medium">{source.source}</span>
+                            </div>
+                            <div className="text-[#006073]">
+                              {source.count} ({source.percentage}%)
+                            </div>
+                          </div>
+                          <div className="h-2 bg-[#ead7a5]/50 rounded-full overflow-hidden">
+                            <div
+                              className={cn("h-full rounded-full", bgColor)}
+                              style={{ width: `${source.percentage}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <p className="text-xs text-[#006073] mt-4">
+                    Shows how emails were discovered across your podcast contacts
+                  </p>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-[#006073]">
+                  <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p>No email source data yet</p>
+                  <p className="text-sm mt-1">Start finding emails to see breakdown</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Database Tracking Stats */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-[#02121a] flex items-center gap-2">
+                <Eye className="h-5 w-5 text-[#0a9396]" />
+                Email Tracking (Database)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoadingTracking ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-[#0a9396]" />
+                </div>
+              ) : trackingData?.summary ? (
+                <div className="space-y-4">
+                  {/* Tracking stats grid */}
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="text-center p-3 bg-[#94d2bd]/20 rounded-lg">
+                      <div className="flex items-center justify-center gap-1 mb-1">
+                        <Eye className="h-4 w-4 text-[#0a9396]" />
+                      </div>
+                      <div className="text-xl font-bold text-[#02121a]">{trackingData.summary.openRate}%</div>
+                      <div className="text-xs text-[#006073]">Open Rate</div>
+                    </div>
+                    <div className="text-center p-3 bg-[#0a9396]/10 rounded-lg">
+                      <div className="flex items-center justify-center gap-1 mb-1">
+                        <MessageSquare className="h-4 w-4 text-[#0a9396]" />
+                      </div>
+                      <div className="text-xl font-bold text-[#02121a]">{trackingData.summary.replyRate}%</div>
+                      <div className="text-xs text-[#006073]">Reply Rate</div>
+                    </div>
+                    <div className="text-center p-3 bg-[#9d2227]/10 rounded-lg">
+                      <div className="flex items-center justify-center gap-1 mb-1">
+                        <XCircle className="h-4 w-4 text-[#9d2227]" />
+                      </div>
+                      <div className="text-xl font-bold text-[#02121a]">{trackingData.summary.bounceRate}%</div>
+                      <div className="text-xs text-[#006073]">Bounce Rate</div>
+                    </div>
+                  </div>
+
+                  {/* Totals */}
+                  <div className="flex justify-between text-sm border-t border-[#94d2bd]/50 pt-3">
+                    <span className="text-[#006073]">Total Sent</span>
+                    <span className="font-medium text-[#02121a]">{trackingData.summary.totalSent}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-[#006073]">Total Opened</span>
+                    <span className="font-medium text-[#0a9396]">{trackingData.summary.totalOpened}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-[#006073]">Total Replied</span>
+                    <span className="font-medium text-[#006073]">{trackingData.summary.totalReplied}</span>
+                  </div>
+
+                  {/* Recent tracking events */}
+                  {trackingData.recentEvents && trackingData.recentEvents.length > 0 && (
+                    <div className="mt-4 pt-3 border-t border-[#94d2bd]/50">
+                      <h4 className="text-sm font-medium text-[#02121a] mb-2">Recent Events</h4>
+                      <div className="space-y-2">
+                        {trackingData.recentEvents.slice(0, 5).map((event, i) => (
+                          <div key={i} className="flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-2">
+                              {event.type === "opened" && <Eye className="h-3 w-3 text-[#0a9396]" />}
+                              {event.type === "replied" && <MessageSquare className="h-3 w-3 text-[#006073]" />}
+                              {event.type === "bounced" && <XCircle className="h-3 w-3 text-[#9d2227]" />}
+                              <span className="text-[#02121a] truncate max-w-[150px]">{event.podcastName}</span>
+                            </div>
+                            <span className={cn(
+                              "px-1.5 py-0.5 rounded text-[10px] font-medium",
+                              event.type === "opened" && "bg-[#0a9396]/10 text-[#0a9396]",
+                              event.type === "replied" && "bg-[#006073]/10 text-[#006073]",
+                              event.type === "bounced" && "bg-[#9d2227]/10 text-[#9d2227]"
+                            )}>
+                              {event.type}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-[#006073]">
+                  <Eye className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p>No tracking data yet</p>
+                  <p className="text-sm mt-1">Email opens and clicks will appear here</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Tracking how-it-works info */}
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle className="text-[#02121a] flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-[#cb6701]" />
+              How Email Tracking Works
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="p-4 bg-[#ead7a5]/30 rounded-lg">
+                <div className="flex items-center gap-2 mb-2">
+                  <Eye className="h-5 w-5 text-[#0a9396]" />
+                  <span className="font-medium text-[#02121a]">Open Tracking</span>
+                </div>
+                <p className="text-sm text-[#006073]">
+                  A tiny invisible pixel image is embedded in each email. When loaded, it records the open event.
+                </p>
+              </div>
+              <div className="p-4 bg-[#0a9396]/10 rounded-lg">
+                <div className="flex items-center gap-2 mb-2">
+                  <MousePointer className="h-5 w-5 text-[#0a9396]" />
+                  <span className="font-medium text-[#02121a]">Click Tracking</span>
+                </div>
+                <p className="text-sm text-[#006073]">
+                  Links in your emails are wrapped with tracking redirects that record clicks before sending recipients to the destination.
+                </p>
+              </div>
+              <div className="p-4 bg-[#94d2bd]/30 rounded-lg">
+                <div className="flex items-center gap-2 mb-2">
+                  <MessageSquare className="h-5 w-5 text-[#006073]" />
+                  <span className="font-medium text-[#02121a]">Reply Detection</span>
+                </div>
+                <p className="text-sm text-[#006073]">
+                  Gmail webhook integration monitors your inbox for replies to outreach emails and updates status automatically.
+                </p>
+              </div>
+            </div>
+            <p className="text-xs text-[#006073] mt-4">
+              Note: Some email clients block tracking pixels. Open rates may be underreported. Reply tracking is the most reliable metric.
+            </p>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
