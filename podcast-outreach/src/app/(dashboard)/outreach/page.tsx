@@ -955,6 +955,8 @@ function PodcastOutreachDetail({
   const [selectedResponse, setSelectedResponse] = useState<ResponseType | null>(podcast.responseType);
   const [editingEmail, setEditingEmail] = useState<EmailInSequence | null>(null);
   const [viewingEmail, setViewingEmail] = useState<EmailInSequence | null>(null);
+  const [isEditingContactEmail, setIsEditingContactEmail] = useState(false);
+  const [editedContactEmail, setEditedContactEmail] = useState(podcast.primaryEmail || "");
 
   const updateResponse = useMutation({
     mutationFn: async (response: ResponseType | null) => {
@@ -1001,18 +1003,69 @@ function PodcastOutreachDetail({
     setEditingEmail(null);
   };
 
+  const handleSaveContactEmail = () => {
+    const trimmedEmail = editedContactEmail.trim();
+    onUpdateCampaignImmediate(podcast.id, { primaryEmail: trimmedEmail || null });
+    setIsEditingContactEmail(false);
+  };
+
+  const handleCancelContactEmailEdit = () => {
+    setEditedContactEmail(podcast.primaryEmail || "");
+    setIsEditingContactEmail(false);
+  };
+
   return (
     <div className="fixed inset-y-0 right-0 w-1/2 bg-white border-l border-[#94d2bd] shadow-xl z-50 flex flex-col">
       {/* Header */}
       <div className="px-6 py-4 border-b border-[#94d2bd] flex items-start justify-between">
-        <div>
+        <div className="flex-1 min-w-0">
           <h2 className="text-lg font-semibold text-[#02121a]">{podcast.showName}</h2>
           {podcast.hostName && (
             <p className="text-sm text-[#006073]">Host: {podcast.hostName}</p>
           )}
-          <p className="text-sm text-[#006073] mt-1">
-            {podcast.primaryEmail || "No email"}
-          </p>
+          {isEditingContactEmail ? (
+            <div className="flex items-center gap-2 mt-1">
+              <input
+                type="email"
+                value={editedContactEmail}
+                onChange={(e) => setEditedContactEmail(e.target.value)}
+                className="flex-1 text-sm px-2 py-1 border border-[#94d2bd] rounded focus:outline-none focus:ring-2 focus:ring-[#0a9396] text-[#02121a]"
+                placeholder="Enter email address"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSaveContactEmail();
+                  if (e.key === "Escape") handleCancelContactEmailEdit();
+                }}
+              />
+              <button
+                onClick={handleSaveContactEmail}
+                className="p-1 text-[#0a9396] hover:bg-[#94d2bd]/30 rounded"
+                title="Save"
+              >
+                <Save className="h-4 w-4" />
+              </button>
+              <button
+                onClick={handleCancelContactEmailEdit}
+                className="p-1 text-[#006073] hover:bg-[#ead7a5] rounded"
+                title="Cancel"
+              >
+                <XCircle className="h-4 w-4" />
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 mt-1 group">
+              <p className="text-sm text-[#006073]">
+                {podcast.primaryEmail || "No email"}
+              </p>
+              <button
+                onClick={() => setIsEditingContactEmail(true)}
+                className="p-1 text-[#006073] hover:text-[#0a9396] hover:bg-[#94d2bd]/30 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                title="Edit email"
+              >
+                <Edit className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
         </div>
         <button
           onClick={onClose}
