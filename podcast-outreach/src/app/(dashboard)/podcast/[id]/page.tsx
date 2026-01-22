@@ -701,19 +701,19 @@ export default function PodcastDetailPage({ params }: Props) {
                   <p className="text-sm text-[#0a9396]">{analysis?.fitReason}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                {analysis?.fitScore !== undefined && (
-                  <span className="px-3 py-1 bg-[#94d2bd] text-[#006073] rounded-full text-sm font-medium">
-                    Score: {analysis.fitScore}/100
-                  </span>
-                )}
-                {analysis?.suggestedAngle && (
-                  <span className="px-3 py-1 bg-[#94d2bd] text-[#006073] rounded-full text-sm font-medium">
-                    {analysis.suggestedAngle}
-                  </span>
-                )}
-              </div>
+              {analysis?.fitScore !== undefined && (
+                <span className="px-3 py-1 bg-[#94d2bd] text-[#006073] rounded-full text-sm font-medium whitespace-nowrap">
+                  Score: {analysis.fitScore}/100
+                </span>
+              )}
             </div>
+            {analysis?.suggestedAngle && (
+              <div className="mt-3 pt-3 border-t border-[#94d2bd]/50">
+                <span className="inline-block px-4 py-2 bg-[#94d2bd] text-[#006073] rounded-lg text-sm font-medium leading-relaxed">
+                  {analysis.suggestedAngle}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Action Buttons */}
