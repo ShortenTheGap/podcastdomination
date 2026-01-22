@@ -21,7 +21,9 @@ import {
   Wand2,
   Save,
   Play,
+  Pause,
   Trash2,
+  StopCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -117,6 +119,7 @@ type OutreachStage =
   | "drafting"
   | "ready_to_send"
   | "follow_up_due"
+  | "paused"
   | "responded"
   | "booked"
   | "closed";
@@ -129,6 +132,7 @@ const PIPELINE_STAGES: { id: OutreachStage; label: string; color: string; icon: 
   { id: "drafting", label: "Drafting", color: "bg-[#0a9396]/20", icon: <Edit className="h-4 w-4" /> },
   { id: "ready_to_send", label: "Sent - Awaiting Response", color: "bg-[#ed9b05]/30", icon: <Mail className="h-4 w-4" /> },
   { id: "follow_up_due", label: "Manual Follow Up", color: "bg-[#cb6701]/30", icon: <RefreshCw className="h-4 w-4" /> },
+  { id: "paused", label: "Paused", color: "bg-[#9d2227]/20", icon: <Pause className="h-4 w-4" /> },
   { id: "responded", label: "Responded", color: "bg-[#94d2bd]/50", icon: <MessageSquare className="h-4 w-4" /> },
   { id: "booked", label: "Booked", color: "bg-[#94d2bd]", icon: <CheckCircle className="h-4 w-4" /> },
   { id: "closed", label: "Closed", color: "bg-[#006073]/30", icon: <Archive className="h-4 w-4" /> },
@@ -933,6 +937,15 @@ function PipelineCard({
         </div>
       )}
 
+      {podcast.status === "paused" && (
+        <div className="mt-2">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-[#9d2227]/20 text-[#9d2227]">
+            <Pause className="h-3 w-3" />
+            Campaign Paused
+          </span>
+        </div>
+      )}
+
       {podcast.responseType && (
         <div className="mt-2">
           <ResponseBadge type={podcast.responseType} />
@@ -1199,6 +1212,8 @@ function EmailSequenceTimeline({
   const [sendingEmailId, setSendingEmailId] = useState<string | null>(null);
   const [isGeneratingSequence, setIsGeneratingSequence] = useState(false);
   const [isStartingCampaign, setIsStartingCampaign] = useState(false);
+  const [isStoppingCampaign, setIsStoppingCampaign] = useState(false);
+  const [isResumingCampaign, setIsResumingCampaign] = useState(false);
   const sequence = podcast.emailSequence || [];
 
   // Define the sequence template based on response type
@@ -1366,6 +1381,121 @@ function EmailSequenceTimeline({
   const initialEmail = sequence.find(e => e.type === "initial");
   const campaignNotStarted = initialEmail && initialEmail.status === "draft";
   const canStartCampaign = allEmailsGenerated && campaignNotStarted;
+
+  // Check if campaign can be stopped (campaign is active with scheduled follow-ups)
+  const canStopCampaign = podcast.status === "ready_to_send" || podcast.status === "follow_up_due";
+
+  // Check if campaign can be resumed (campaign is paused)
+  const canResumeCampaign = podcast.status === "paused";
+
+  const handleStopCampaign = async () => {
+    setIsStoppingCampaign(true);
+    try {
+      // Clear scheduled follow-ups and pause the campaign
+      const newSequence = sequence.map(email => {
+        if (email.status === "scheduled") {
+          return {
+            ...email,
+            status: "draft" as const,
+            scheduledFor: null,
+          };
+        }
+        return email;
+      });
+
+      // Update campaign: mark as paused and clear next follow-up date
+      onUpdateCampaignImmediate(podcast.id, {
+        emailSequence: newSequence,
+        nextFollowUpAt: null,
+        status: "paused" as OutreachStage,
+      });
+
+      onShowToast("Campaign paused. Scheduled follow-ups have been cancelled.", "warning");
+    } catch (error) {
+      console.error("Failed to stop campaign:", error);
+      onShowToast("Failed to stop campaign. Please try again.", "error");
+    }
+    setIsStoppingCampaign(false);
+  };
+
+  const handleResumeCampaign = async () => {
+    setIsResumingCampaign(true);
+    try {
+      // Load email settings from localStorage for follow-up timing
+      let emailSettings = {
+        followUp1Days: 5,
+        followUp2Days: 7,
+        followUp3Days: 14,
+      };
+
+      if (typeof window !== "undefined") {
+        const storedEmailSettings = localStorage.getItem("email-settings");
+        if (storedEmailSettings) {
+          try {
+            const parsed = JSON.parse(storedEmailSettings);
+            emailSettings = {
+              followUp1Days: parsed.followUp1Days || 5,
+              followUp2Days: parsed.followUp2Days || 7,
+              followUp3Days: parsed.followUp3Days || 14,
+            };
+          } catch {}
+        }
+      }
+
+      // Find the next email to send (first draft email in sequence after any sent emails)
+      const sentEmails = sequence.filter(e => e.status === "sent" || e.status === "opened" || e.status === "replied");
+      const draftEmails = sequence.filter(e => e.status === "draft");
+
+      // If there are draft emails remaining, reschedule them
+      if (draftEmails.length > 0) {
+        const now = new Date();
+        let nextDate = new Date(now);
+
+        // Calculate next follow-up date based on which email is next
+        const nextEmail = draftEmails[0];
+        if (nextEmail.type === "follow_up_1") {
+          nextDate.setDate(nextDate.getDate() + emailSettings.followUp1Days);
+        } else if (nextEmail.type === "follow_up_2") {
+          nextDate.setDate(nextDate.getDate() + emailSettings.followUp2Days);
+        } else if (nextEmail.type === "follow_up_3") {
+          nextDate.setDate(nextDate.getDate() + emailSettings.followUp3Days);
+        } else {
+          nextDate.setDate(nextDate.getDate() + 3); // Default 3 days for other email types
+        }
+
+        // Update the next email to be scheduled
+        const newSequence = sequence.map(email => {
+          if (email.id === nextEmail.id) {
+            return {
+              ...email,
+              status: "scheduled" as const,
+              scheduledFor: nextDate.toISOString(),
+            };
+          }
+          return email;
+        });
+
+        // Update campaign: mark as ready_to_send and set next follow-up date
+        onUpdateCampaignImmediate(podcast.id, {
+          emailSequence: newSequence,
+          nextFollowUpAt: nextDate.toISOString(),
+          status: "ready_to_send" as OutreachStage,
+        });
+
+        onShowToast("Campaign resumed! Next follow-up scheduled.", "success");
+      } else {
+        // No more emails to send - just move back to ready_to_send
+        onUpdateCampaignImmediate(podcast.id, {
+          status: "ready_to_send" as OutreachStage,
+        });
+        onShowToast("Campaign resumed.", "success");
+      }
+    } catch (error) {
+      console.error("Failed to resume campaign:", error);
+      onShowToast("Failed to resume campaign. Please try again.", "error");
+    }
+    setIsResumingCampaign(false);
+  };
 
   const handleStartCampaign = async () => {
     if (!initialEmail) return;
@@ -1654,6 +1784,58 @@ function EmailSequenceTimeline({
           </button>
           <p className="text-xs text-slate-500 text-center mt-2">
             This will send the initial email and schedule follow-ups automatically
+          </p>
+        </div>
+      )}
+
+      {/* Stop Campaign Button - shows when campaign is active */}
+      {canStopCampaign && (
+        <div className="mt-6 pt-4 border-t border-slate-200">
+          <button
+            onClick={handleStopCampaign}
+            disabled={isStoppingCampaign}
+            className="w-full px-4 py-3 bg-gradient-to-r from-red-600 to-orange-600 text-white font-medium rounded-lg hover:from-red-700 hover:to-orange-700 disabled:opacity-50 flex items-center justify-center gap-2 shadow-md"
+          >
+            {isStoppingCampaign ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Stopping Campaign...
+              </>
+            ) : (
+              <>
+                <StopCircle className="h-5 w-5" />
+                Stop Campaign
+              </>
+            )}
+          </button>
+          <p className="text-xs text-slate-500 text-center mt-2">
+            This will pause the campaign and cancel scheduled follow-ups
+          </p>
+        </div>
+      )}
+
+      {/* Resume Campaign Button - shows when campaign is paused */}
+      {canResumeCampaign && (
+        <div className="mt-6 pt-4 border-t border-slate-200">
+          <button
+            onClick={handleResumeCampaign}
+            disabled={isResumingCampaign}
+            className="w-full px-4 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-medium rounded-lg hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 flex items-center justify-center gap-2 shadow-md"
+          >
+            {isResumingCampaign ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Resuming Campaign...
+              </>
+            ) : (
+              <>
+                <Play className="h-5 w-5" />
+                Resume Campaign
+              </>
+            )}
+          </button>
+          <p className="text-xs text-slate-500 text-center mt-2">
+            This will reschedule follow-up emails and continue the outreach
           </p>
         </div>
       )}
