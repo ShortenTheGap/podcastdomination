@@ -144,6 +144,30 @@ export default function PodcastDetailPage({ params }: Props) {
     },
   });
 
+  // Restore to pipeline (unsuppress without re-analyzing)
+  const restoreMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/podcasts/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: "NOT_CONTACTED",
+          suppressed: false,
+          suppressedAt: null,
+          tier: "PENDING",
+          pendingAnalysis: null,
+          analysisRunAt: null,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to restore");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["podcast", id] });
+      queryClient.invalidateQueries({ queryKey: ["podcasts"] });
+    },
+  });
+
   // Reanalyze (for skipped podcasts)
   const reanalyzeMutation = useMutation({
     mutationFn: async () => {
@@ -664,18 +688,32 @@ export default function PodcastDetailPage({ params }: Props) {
                 </div>
               </div>
             )}
-            <button
-              onClick={() => reanalyzeMutation.mutate()}
-              disabled={reanalyzeMutation.isPending}
-              className="inline-flex items-center gap-2 px-4 py-2 border border-[#94d2bd] text-[#006073] rounded-lg hover:bg-[#f5edd8]"
-            >
-              {reanalyzeMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <RotateCcw className="h-4 w-4" />
-              )}
-              Re-analyze
-            </button>
+            <div className="flex gap-3">
+              <button
+                onClick={() => restoreMutation.mutate()}
+                disabled={restoreMutation.isPending}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-[#0a9396] text-white rounded-lg hover:bg-[#006073] disabled:opacity-50"
+              >
+                {restoreMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <ArrowLeft className="h-4 w-4" />
+                )}
+                Restore to Pipeline
+              </button>
+              <button
+                onClick={() => reanalyzeMutation.mutate()}
+                disabled={reanalyzeMutation.isPending}
+                className="inline-flex items-center gap-2 px-4 py-2 border border-[#94d2bd] text-[#006073] rounded-lg hover:bg-[#f5edd8]"
+              >
+                {reanalyzeMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RotateCcw className="h-4 w-4" />
+                )}
+                Re-analyze
+              </button>
+            </div>
           </div>
         </div>
       ) : isSent ? (

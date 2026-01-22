@@ -24,8 +24,11 @@ export default function PipelinePage() {
     queryFn: async () => {
       const params = new URLSearchParams();
       if (statusFilter) params.set("status", statusFilter);
-      // Don't show suppressed podcasts by default
-      params.set("suppressed", "false");
+      // Show suppressed podcasts when filtering by SKIPPED (since skipped = suppressed)
+      // Otherwise hide suppressed podcasts
+      if (statusFilter !== "SKIPPED") {
+        params.set("suppressed", "false");
+      }
       const res = await fetch(`/api/podcasts?${params}`);
       return res.json();
     },
