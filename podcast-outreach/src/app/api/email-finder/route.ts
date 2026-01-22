@@ -171,9 +171,49 @@ function getSearchSuggestions(
 
 /**
  * GET /api/email-finder - Get email finder status/config
+ * Add ?test=hunter to test Hunter.io API connection
  */
-export async function GET() {
-  const hunterConfigured = !!process.env.HUNTER_API_KEY;
+export async function GET(request: NextRequest) {
+  const hunterApiKey = process.env.HUNTER_API_KEY;
+  const hunterConfigured = !!hunterApiKey;
+
+  // Test Hunter.io API if requested
+  const url = new URL(request.url);
+  if (url.searchParams.get("test") === "hunter" && hunterApiKey) {
+    try {
+      // Test the API by checking account info
+      const response = await fetch(`https://api.hunter.io/v2/account?api_key=${hunterApiKey}`);
+      const data = await response.json();
+
+      if (response.ok && data.data) {
+        return NextResponse.json({
+          success: true,
+          message: "Hunter.io API is working",
+          account: {
+            email: data.data.email,
+            plan: data.data.plan_name,
+            requestsUsed: data.data.requests?.searches?.used || 0,
+            requestsAvailable: data.data.requests?.searches?.available || 0,
+            verificationsUsed: data.data.requests?.verifications?.used || 0,
+            verificationsAvailable: data.data.requests?.verifications?.available || 0,
+          },
+        });
+      } else {
+        return NextResponse.json({
+          success: false,
+          message: "Hunter.io API error",
+          error: data.errors || data.error || "Unknown error",
+          status: response.status,
+        }, { status: 400 });
+      }
+    } catch (error) {
+      return NextResponse.json({
+        success: false,
+        message: "Failed to connect to Hunter.io",
+        error: error instanceof Error ? error.message : "Unknown error",
+      }, { status: 500 });
+    }
+  }
 
   return NextResponse.json({
     methods: [
@@ -187,7 +227,7 @@ export async function GET() {
       "Add Apple Podcasts URL for best results",
       "Website URL enables direct scanning",
       hunterConfigured
-        ? "Hunter.io is configured and active"
+        ? "Hunter.io is configured and active - add ?test=hunter to verify"
         : "Add HUNTER_API_KEY to .env for enhanced email discovery",
     ],
   });

@@ -735,19 +735,49 @@ async function searchHunterIo(
   try {
     const domain = new URL(websiteUrl).hostname.replace(/^www\./, "");
 
+    // Skip common hosting/podcast platform domains that won't have useful results
+    const skipDomains = [
+      "anchor.fm", "buzzsprout.com", "podbean.com", "libsyn.com",
+      "spreaker.com", "captivate.fm", "transistor.fm", "simplecast.com",
+      "megaphone.fm", "apple.com", "spotify.com", "podcasts.apple.com"
+    ];
+
+    if (skipDomains.some(skip => domain.includes(skip))) {
+      console.log("[EmailFinder] Skipping Hunter.io for hosting platform domain:", domain);
+      return results;
+    }
+
     // Method 1: Domain search
-    const domainSearchUrl = `https://api.hunter.io/v2/domain-search?domain=${domain}&api_key=${apiKey}&limit=5`;
+    const domainSearchUrl = `https://api.hunter.io/v2/domain-search?domain=${domain}&api_key=${apiKey}&limit=10`;
     console.log("[EmailFinder] Calling Hunter.io domain-search for:", domain);
 
     const domainResponse = await fetch(domainSearchUrl);
+    const domainData = await domainResponse.json();
 
-    if (domainResponse.ok) {
-      const data = await domainResponse.json();
-      const emails = data.data?.emails || [];
+    if (!domainResponse.ok) {
+      console.error("[EmailFinder] Hunter.io domain-search error:", {
+        status: domainResponse.status,
+        statusText: domainResponse.statusText,
+        error: domainData?.errors || domainData?.error || domainData,
+      });
+    } else {
+      console.log("[EmailFinder] Hunter.io domain-search response:", {
+        domain,
+        emailsFound: domainData.data?.emails?.length || 0,
+        webmail: domainData.data?.webmail,
+        pattern: domainData.data?.pattern,
+      });
+
+      const emails = domainData.data?.emails || [];
 
       for (const emailData of emails) {
         if (emailData.value && isValidContactEmail(emailData.value)) {
           let confidence = 0.75;
+
+          // Boost confidence based on Hunter.io's own confidence score
+          if (emailData.confidence) {
+            confidence = Math.max(0.6, emailData.confidence / 100);
+          }
 
           // Boost confidence if name matches host
           if (hostName) {
@@ -756,8 +786,15 @@ async function searchHunterIo(
               emailData.first_name?.toLowerCase() === hostFirstName ||
               emailData.value?.toLowerCase().includes(hostFirstName)
             ) {
-              confidence = 0.9;
+              confidence = Math.min(0.95, confidence + 0.15);
             }
+          }
+
+          // Boost for certain positions/types
+          if (emailData.position?.toLowerCase().includes("host") ||
+              emailData.position?.toLowerCase().includes("founder") ||
+              emailData.position?.toLowerCase().includes("owner")) {
+            confidence = Math.min(0.95, confidence + 0.1);
           }
 
           results.push({
@@ -770,28 +807,45 @@ async function searchHunterIo(
       }
     }
 
-    // Method 2: Email finder (if we have host name and no results yet)
-    if (results.length === 0 && hostName) {
+    // Method 2: Email finder (if we have host name and no results yet or low confidence results)
+    const hasHighConfidenceResult = results.some(r => r.confidence >= 0.8);
+    if (!hasHighConfidenceResult && hostName) {
       const nameParts = hostName.trim().split(" ");
       if (nameParts.length >= 2) {
         const firstName = nameParts[0];
         const lastName = nameParts[nameParts.length - 1];
 
         const finderUrl = `https://api.hunter.io/v2/email-finder?domain=${domain}&first_name=${encodeURIComponent(firstName)}&last_name=${encodeURIComponent(lastName)}&api_key=${apiKey}`;
-        console.log("[EmailFinder] Calling Hunter.io email-finder...");
+        console.log("[EmailFinder] Calling Hunter.io email-finder for:", firstName, lastName, "@", domain);
 
         const finderResponse = await fetch(finderUrl);
+        const finderData = await finderResponse.json();
 
-        if (finderResponse.ok) {
-          const data = await finderResponse.json();
-          if (data.data?.email && isValidContactEmail(data.data.email)) {
+        if (!finderResponse.ok) {
+          console.error("[EmailFinder] Hunter.io email-finder error:", {
+            status: finderResponse.status,
+            error: finderData?.errors || finderData?.error || finderData,
+          });
+        } else if (finderData.data?.email && isValidContactEmail(finderData.data.email)) {
+          console.log("[EmailFinder] Hunter.io email-finder found:", finderData.data.email, "score:", finderData.data.score);
+
+          // Check if this email already exists in results
+          const existingIndex = results.findIndex(r => r.email === finderData.data.email.toLowerCase());
+          const newConfidence = finderData.data.score ? finderData.data.score / 100 : 0.7;
+
+          if (existingIndex >= 0) {
+            // Update confidence if email-finder gives higher score
+            results[existingIndex].confidence = Math.max(results[existingIndex].confidence, newConfidence);
+          } else {
             results.push({
-              email: data.data.email.toLowerCase(),
+              email: finderData.data.email.toLowerCase(),
               source: "hunter_io",
               sourceUrl: `https://hunter.io/search/${domain}`,
-              confidence: data.data.score ? data.data.score / 100 : 0.7,
+              confidence: newConfidence,
             });
           }
+        } else {
+          console.log("[EmailFinder] Hunter.io email-finder: no email found for", firstName, lastName);
         }
       }
     }
