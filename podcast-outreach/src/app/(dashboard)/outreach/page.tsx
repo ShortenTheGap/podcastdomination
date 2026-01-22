@@ -273,10 +273,14 @@ export default function OutreachPage() {
         const serverEmailCount = serverCampaigns.reduce((sum: number, c: OutreachPodcast) => sum + (c.emailSequence?.length || 0), 0);
         const localHasMoreContent = localEmailCount > serverEmailCount;
 
+        // Check if server has MORE campaigns than local (new campaign was added externally)
+        const serverHasMoreCampaigns = serverCampaigns.length > localBackup.campaigns.length;
+
         // Use local if:
         // 1. It was saved within the last 30 minutes (extended from 5 min), OR
         // 2. It has MORE content than server (emails were generated locally)
-        if (localTime > thirtyMinutesAgo || localHasMoreContent) {
+        // BUT always use server if server has more campaigns (new campaign was added)
+        if ((localTime > thirtyMinutesAgo || localHasMoreContent) && !serverHasMoreCampaigns) {
           console.log("[Recovery] Local backup has unsaved changes, using local data");
           console.log("[Recovery] Server hash:", serverHash);
           console.log("[Recovery] Local hash:", localHash);
@@ -291,6 +295,23 @@ export default function OutreachPage() {
               hasUnsyncedChangesRef.current = false;
             }
           });
+          return;
+        }
+
+        // If server has more campaigns, merge: use server data but preserve local email sequences
+        if (serverHasMoreCampaigns) {
+          console.log("[Recovery] Server has new campaigns, merging with local email sequences");
+          const mergedCampaigns = serverCampaigns.map((serverCampaign: OutreachPodcast) => {
+            const localCampaign = localBackup.campaigns.find(c => c.id === serverCampaign.id);
+            // If local has more emails for this campaign, preserve them
+            if (localCampaign && (localCampaign.emailSequence?.length || 0) > (serverCampaign.emailSequence?.length || 0)) {
+              return { ...serverCampaign, emailSequence: localCampaign.emailSequence };
+            }
+            return serverCampaign;
+          });
+          setLocalCampaigns(mergedCampaigns);
+          saveToLocalStorage(mergedCampaigns);
+          setLastSyncTime(new Date());
           return;
         }
       }

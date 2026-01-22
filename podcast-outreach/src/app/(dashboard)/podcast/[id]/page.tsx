@@ -265,6 +265,8 @@ export default function PodcastDetailPage({ params }: Props) {
       return data;
     },
     onSuccess: () => {
+      // Invalidate the outreach-campaigns cache so the outreach page fetches fresh data
+      queryClient.invalidateQueries({ queryKey: ["outreach-campaigns"] });
       // Navigate to outreach page
       router.push("/outreach");
     },
