@@ -158,6 +158,8 @@ export default function PodcastDetailPage({ params }: Props) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ campaigns: updatedCampaigns }),
             });
+            // Invalidate outreach-campaigns query so Outreach page fetches fresh data
+            queryClient.invalidateQueries({ queryKey: ["outreach-campaigns"] });
           }
         }
       } catch (error) {

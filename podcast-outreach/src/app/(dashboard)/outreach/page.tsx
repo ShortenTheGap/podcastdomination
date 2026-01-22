@@ -45,8 +45,9 @@ function createContentHash(campaigns: OutreachPodcast[]): string {
     const emailInfo = (c.emailSequence || [])
       .map(e => `${e.type}:${e.status}:${e.subject?.slice(0, 20) || ''}`)
       .join(',');
-    // Include response type and other important fields
-    return `${c.id}:${c.status}:${c.responseType || ''}:${(c.emailSequence || []).length}:${emailInfo}`;
+    // Include response type, email, and other important fields
+    // primaryEmail is included to detect when email is changed from Podcast detail page
+    return `${c.id}:${c.status}:${c.responseType || ''}:${c.primaryEmail || ''}:${(c.emailSequence || []).length}:${emailInfo}`;
   }).sort().join('|');
 }
 
@@ -213,6 +214,8 @@ export default function OutreachPage() {
   const syncTimerRef = useRef<NodeJS.Timeout | null>(null);
   // Track pending campaigns to sync (ensures we always sync the latest)
   const pendingCampaignsRef = useRef<OutreachPodcast[] | null>(null);
+  // Track if we just completed a sync - prevents useEffect from overwriting local state with stale server data
+  const justSyncedRef = useRef(false);
 
   const queryClient = useQueryClient();
 
@@ -242,6 +245,15 @@ export default function OutreachPage() {
     // This prevents the race condition where server refetch overwrites local edits
     if (hasUnsyncedChanges || hasUnsyncedChangesRef.current) {
       console.log("[Sync] Skipping server data - local changes pending sync");
+      return;
+    }
+
+    // IMPORTANT: If we just completed a sync, skip reconciliation
+    // Our local state is already correct and has been persisted to the server
+    // The stale outreachData from the query cache would incorrectly overwrite our changes
+    if (justSyncedRef.current) {
+      console.log("[Sync] Skipping reconciliation - just synced, local state is authoritative");
+      justSyncedRef.current = false;
       return;
     }
 
@@ -318,6 +330,33 @@ export default function OutreachPage() {
           setLastSyncTime(new Date());
           return;
         }
+
+        // Check if server has different emails that should be synced
+        // This handles the case where email was updated from Podcast detail page
+        const serverHasNewerEmails = serverCampaigns.some((serverCampaign: OutreachPodcast) => {
+          const localCampaign = localBackup.campaigns.find(c => c.id === serverCampaign.id);
+          // Server email is different AND local doesn't have more email sequences
+          return localCampaign &&
+            serverCampaign.primaryEmail !== localCampaign.primaryEmail &&
+            (serverCampaign.emailSequence?.length || 0) >= (localCampaign.emailSequence?.length || 0);
+        });
+
+        if (serverHasNewerEmails && !localHasMoreContent) {
+          console.log("[Recovery] Server has updated emails, merging email addresses from server");
+          // Use local data but sync email addresses from server
+          const mergedCampaigns = localBackup.campaigns.map(localCampaign => {
+            const serverCampaign = serverCampaigns.find((c: OutreachPodcast) => c.id === localCampaign.id);
+            if (serverCampaign && serverCampaign.primaryEmail !== localCampaign.primaryEmail) {
+              console.log(`[Recovery] Updating email for ${localCampaign.showName}: ${localCampaign.primaryEmail} -> ${serverCampaign.primaryEmail}`);
+              return { ...localCampaign, primaryEmail: serverCampaign.primaryEmail };
+            }
+            return localCampaign;
+          });
+          setLocalCampaigns(mergedCampaigns);
+          saveToLocalStorage(mergedCampaigns);
+          setLastSyncTime(new Date());
+          return;
+        }
       }
     }
 
@@ -364,6 +403,8 @@ export default function OutreachPage() {
         hasUnsyncedChangesRef.current = false;
         setLastSyncTime(new Date());
         pendingCampaignsRef.current = null;
+        // Mark that we just synced to prevent useEffect from overwriting local state
+        justSyncedRef.current = true;
       } else {
         setSyncError("Failed to save changes. Click to retry.");
       }
@@ -465,6 +506,8 @@ export default function OutreachPage() {
           hasUnsyncedChangesRef.current = false;
           setLastSyncTime(new Date());
           pendingCampaignsRef.current = null;
+          // Mark that we just synced to prevent useEffect from overwriting local state
+          justSyncedRef.current = true;
           console.log("[Sync] Stage change saved successfully");
         } else {
           setSyncError("Failed to save. Click to retry.");
@@ -502,6 +545,8 @@ export default function OutreachPage() {
           hasUnsyncedChangesRef.current = false;
           setLastSyncTime(new Date());
           pendingCampaignsRef.current = null;
+          // Mark that we just synced to prevent useEffect from overwriting local state
+          justSyncedRef.current = true;
           console.log("[Sync] Campaign update saved immediately");
         } else {
           setSyncError("Failed to save. Click to retry.");
@@ -524,6 +569,8 @@ export default function OutreachPage() {
       hasUnsyncedChangesRef.current = false;
       setLastSyncTime(new Date());
       pendingCampaignsRef.current = null;
+      // Mark that we just synced to prevent useEffect from overwriting local state
+      justSyncedRef.current = true;
     } else {
       setSyncError("Failed to save. Click to retry.");
     }
@@ -991,6 +1038,7 @@ function PodcastOutreachDetail({
   const [viewingEmail, setViewingEmail] = useState<EmailInSequence | null>(null);
   const [isEditingContactEmail, setIsEditingContactEmail] = useState(false);
   const [editedContactEmail, setEditedContactEmail] = useState(podcast.primaryEmail || "");
+  const queryClient = useQueryClient();
 
   const updateResponse = useMutation({
     mutationFn: async (response: ResponseType | null) => {
@@ -1049,6 +1097,9 @@ function PodcastOutreachDetail({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ primaryEmail: trimmedEmail || null }),
       });
+      // Invalidate podcast queries so Pipeline and Podcast detail page see the update
+      queryClient.invalidateQueries({ queryKey: ["podcasts"] });
+      queryClient.invalidateQueries({ queryKey: ["podcast", podcast.id] });
     } catch (error) {
       console.error("Failed to sync email to podcast database:", error);
     }
