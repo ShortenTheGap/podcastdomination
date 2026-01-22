@@ -202,6 +202,18 @@ export default function OutreachPage() {
     }
   }, [toast]);
 
+  // Keep selectedPodcast in sync with localCampaigns (e.g., when email is updated from server)
+  // Note: Only depend on localCampaigns to avoid re-running when selectedPodcast updates
+  useEffect(() => {
+    if (selectedPodcast && localCampaigns.length > 0) {
+      const updatedCampaign = localCampaigns.find(c => c.id === selectedPodcast.id);
+      if (updatedCampaign && updatedCampaign.primaryEmail !== selectedPodcast.primaryEmail) {
+        setSelectedPodcast(updatedCampaign);
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localCampaigns]);
+
   const showToast = useCallback((
     message: string,
     type: "error" | "success" | "warning" = "error",
@@ -301,9 +313,22 @@ export default function OutreachPage() {
           console.log("[Recovery] Server hash:", serverHash);
           console.log("[Recovery] Local hash:", localHash);
           console.log("[Recovery] Local email count:", localEmailCount, "Server email count:", serverEmailCount);
-          setLocalCampaigns(localBackup.campaigns);
+
+          // IMPORTANT: Even when using local data, always sync email addresses from server
+          // This handles the case where email was updated from Podcast detail page
+          const mergedWithServerEmails = localBackup.campaigns.map(localCampaign => {
+            const serverCampaign = serverCampaigns.find((c: OutreachPodcast) => c.id === localCampaign.id);
+            if (serverCampaign && serverCampaign.primaryEmail !== localCampaign.primaryEmail) {
+              console.log(`[Recovery] Syncing email for ${localCampaign.showName}: ${localCampaign.primaryEmail} -> ${serverCampaign.primaryEmail}`);
+              return { ...localCampaign, primaryEmail: serverCampaign.primaryEmail };
+            }
+            return localCampaign;
+          });
+
+          setLocalCampaigns(mergedWithServerEmails);
+          saveToLocalStorage(mergedWithServerEmails);
           // Immediately sync local to server
-          syncCampaignsToServer(localBackup.campaigns).then(success => {
+          syncCampaignsToServer(mergedWithServerEmails).then(success => {
             if (success) {
               console.log("[Recovery] Successfully synced local changes to server");
               setLastSyncTime(new Date());
