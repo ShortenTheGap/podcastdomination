@@ -1,0 +1,76 @@
+@import "tailwindcss";
+
+:root {
+  /* Primary Palette */
+  --color-primary-900: #02121a;
+  --color-primary-800: #006073;
+  --color-primary-700: #0a9396;
+  --color-primary-600: #0a9396;
+  --color-primary-500: #0a9396;
+  --color-primary-100: #94d2bd;
+  --color-primary-50: #d4f0e7;
+
+  /* Warm Tones */
+  --color-warm-900: #9d2227;
+  --color-warm-800: #b02013;
+  --color-warm-700: #bb3f03;
+  --color-warm-600: #cb6701;
+  --color-warm-500: #ed9b05;
+  --color-warm-100: #ead7a5;
+  --color-warm-50: #f5edd8;
+
+  /* Semantic Colors */
+  --background: #ffffff;
+  --foreground: #02121a;
+  --muted: #ead7a5;
+  --muted-foreground: #006073;
+  --accent: #0a9396;
+  --accent-foreground: #ffffff;
+  --destructive: #9d2227;
+  --success: #94d2bd;
+  --warning: #ed9b05;
+
+  /* Component Colors */
+  --border: #94d2bd;
+  --ring: #0a9396;
+  --input-border: #94d2bd;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+
+  /* Custom palette colors for Tailwind */
+  --color-brand-50: #d4f0e7;
+  --color-brand-100: #94d2bd;
+  --color-brand-500: #0a9396;
+  --color-brand-600: #006073;
+  --color-brand-900: #02121a;
+
+  --color-cream-50: #f5edd8;
+  --color-cream-100: #ead7a5;
+
+  --color-amber-warm: #ed9b05;
+  --color-orange-warm: #cb6701;
+  --color-burnt: #bb3f03;
+  --color-rust: #b02013;
+  --color-maroon: #9d2227;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #02121a;
+    --foreground: #ead7a5;
+    --muted: #006073;
+    --muted-foreground: #94d2bd;
+    --border: #006073;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
